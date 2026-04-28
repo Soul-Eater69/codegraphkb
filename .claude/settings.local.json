@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pip install -e . --quiet)",
+      "Bash(where python *)",
+      "Bash(py -V)",
+      "Bash(py -3 -V)",
+      "Bash(py -3 -m pip install -e . --quiet)",
+      "Bash(py -3 -m pip install pytest --quiet)",
+      "Bash(py -3 -m pytest tests/ -x -q)",
+      "Bash(codegraph index *)",
+      "Bash(codegraph stats *)",
+      "Bash(codegraph ask *)",
+      "Bash(codegraph find *)",
+      "Bash(codegraph impact *)"
+    ]
+  }
+}

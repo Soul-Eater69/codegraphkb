@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codegraphkb"
+version = "0.1.0"
+description = "Convert a codebase into a graph-powered knowledge base and serve minimal task-specific context to LLMs."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "CodeGraphKB" }]
+keywords = ["llm", "code-graph", "rag", "mcp", "claude", "context"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+llm = ["anthropic>=0.40.0"]
+api = ["fastapi>=0.110", "uvicorn>=0.27"]
+all = ["anthropic>=0.40.0", "fastapi>=0.110", "uvicorn>=0.27"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+codegraph = "codegraphkb.cli:main"
+codegraphkb = "codegraphkb.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+codegraphkb = ["py.typed"]
