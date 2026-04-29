@@ -9,8 +9,11 @@ import json
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
+
+from codegraphkb.core.graph_schema import PrecisionLevel
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -41,7 +44,17 @@ CREATE TABLE IF NOT EXISTS symbols (
     signature TEXT,
     docstring TEXT,
     capsule TEXT,
-    extras TEXT
+    extras TEXT,
+    return_type TEXT NOT NULL DEFAULT '',
+    declared_type TEXT NOT NULL DEFAULT '',
+    visibility TEXT NOT NULL DEFAULT '',
+    is_exported INTEGER NOT NULL DEFAULT 0,
+    parser_backend TEXT NOT NULL DEFAULT '',
+    parser_version TEXT NOT NULL DEFAULT '',
+    semantic_backend TEXT NOT NULL DEFAULT '',
+    semantic_version TEXT NOT NULL DEFAULT '',
+    content_hash TEXT NOT NULL DEFAULT '',
+    metadata_json TEXT NOT NULL DEFAULT '{}'
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_symbols_qname ON symbols(qualified_name);
 CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
@@ -56,7 +69,12 @@ CREATE TABLE IF NOT EXISTS edges (
     edge_type TEXT NOT NULL,
     confidence REAL NOT NULL,
     extraction_source TEXT NOT NULL,
-    line INTEGER
+    line INTEGER,
+    column INTEGER,
+    precision_level INTEGER NOT NULL DEFAULT 1,
+    reason TEXT NOT NULL DEFAULT '',
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_edges_src ON edges(src_qname, edge_type);
 CREATE INDEX IF NOT EXISTS idx_edges_dst ON edges(dst_qname, edge_type);
@@ -75,6 +93,16 @@ CREATE TABLE IF NOT EXISTS doc_lengths (
     symbol_id INTEGER PRIMARY KEY REFERENCES symbols(id) ON DELETE CASCADE,
     length INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS embeddings (
+    symbol_id INTEGER PRIMARY KEY REFERENCES symbols(id) ON DELETE CASCADE,
+    model TEXT NOT NULL,
+    dim INTEGER NOT NULL,
+    content_hash TEXT NOT NULL,
+    vector BLOB NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_embeddings_model ON embeddings(model);
 """
 
 
@@ -111,17 +139,26 @@ class EdgeRow:
     edge_type: str
     confidence: float
     line: int | None
+    column: int | None = None
+    precision_level: int = int(PrecisionLevel.SYNTAX)
+    extraction_source: str = ""
+    reason: str = ""
+    metadata: dict = None  # type: ignore[assignment]
 
 
 class GraphStore:
     def __init__(self, db_path: Path):
         self.db_path = db_path
+        is_new_db = not db_path.exists()
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(db_path))
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
-        self._conn.execute("PRAGMA journal_mode = WAL")
-        self._conn.executescript(SCHEMA)
+        if is_new_db:
+            self._conn.execute("PRAGMA journal_mode = WAL")
+            self._conn.executescript(SCHEMA)
+        from codegraphkb.core.migrations import migrate_schema
+        migrate_schema(self._conn)
         self._conn.commit()
 
     # ---------- low-level ----------
@@ -193,15 +230,25 @@ class GraphStore:
     # ---------- symbols ----------
     def insert_symbol(self, *, file_id: int, kind: str, name: str, qualified_name: str,
                       parent_qname: str | None, start_line: int, end_line: int,
-                      signature: str, docstring: str, capsule: str, extras: dict) -> int:
+                      signature: str, docstring: str, capsule: str, extras: dict,
+                      return_type: str = "", declared_type: str = "",
+                      visibility: str = "", is_exported: bool = False,
+                      parser_backend: str = "", parser_version: str = "",
+                      semantic_backend: str = "", semantic_version: str = "",
+                      content_hash: str = "", metadata_json: dict | None = None) -> int:
         with self.transaction() as cx:
             cx.execute("DELETE FROM symbols WHERE qualified_name=?", (qualified_name,))
             cur = cx.execute(
                 "INSERT INTO symbols(file_id, kind, name, qualified_name, parent_qname, "
-                "start_line, end_line, signature, docstring, capsule, extras) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "start_line, end_line, signature, docstring, capsule, extras, "
+                "return_type, declared_type, visibility, is_exported, parser_backend, "
+                "parser_version, semantic_backend, semantic_version, content_hash, metadata_json) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (file_id, kind, name, qualified_name, parent_qname, start_line, end_line,
-                 signature, docstring, capsule, json.dumps(extras or {})),
+                 signature, docstring, capsule, json.dumps(extras or {}),
+                 return_type, declared_type, visibility, 1 if is_exported else 0,
+                 parser_backend, parser_version, semantic_backend, semantic_version,
+                 content_hash, json.dumps(metadata_json or {})),
             )
             return int(cur.lastrowid)
 
@@ -258,14 +305,16 @@ class GraphStore:
             cx.executemany("DELETE FROM edges WHERE src_qname=?", [(q,) for q in qnames])
 
     def insert_edges(self, edges: Iterable[tuple]) -> None:
-        """Each edge tuple: (src_qname, dst_qname|None, dst_name, edge_type, confidence, source, line)."""
-        rows = list(edges)
+        """Insert edge rows, accepting old 7-tuples or schema-v3 12-tuples."""
+        now = datetime.now(timezone.utc).isoformat()
+        rows = [_normalize_edge_row(row, now) for row in edges]
         if not rows:
             return
         with self.transaction() as cx:
             cx.executemany(
                 "INSERT INTO edges(src_qname, dst_qname, dst_name, edge_type, "
-                "confidence, extraction_source, line) VALUES (?,?,?,?,?,?,?)",
+                "confidence, extraction_source, line, column, precision_level, reason, "
+                "metadata_json, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 rows,
             )
 
@@ -363,6 +412,44 @@ class GraphStore:
         ).fetchone()
         return int(row["length"]) if row else 1
 
+    # ---------- embeddings ----------
+    def get_embedding(self, symbol_id: int, model: str) -> tuple[str, bytes, int] | None:
+        row = self._conn.execute(
+            "SELECT content_hash, vector, dim FROM embeddings WHERE symbol_id=? AND model=?",
+            (symbol_id, model),
+        ).fetchone()
+        if row is None:
+            return None
+        return row["content_hash"], bytes(row["vector"]), int(row["dim"])
+
+    def upsert_embedding(self, symbol_id: int, *, model: str, dim: int,
+                         content_hash: str, vector: bytes, created_at: str) -> None:
+        with self.transaction() as cx:
+            cx.execute(
+                "INSERT INTO embeddings(symbol_id, model, dim, content_hash, vector, created_at) "
+                "VALUES (?,?,?,?,?,?) "
+                "ON CONFLICT(symbol_id) DO UPDATE SET model=excluded.model, dim=excluded.dim, "
+                "content_hash=excluded.content_hash, vector=excluded.vector, "
+                "created_at=excluded.created_at",
+                (symbol_id, model, dim, content_hash, vector, created_at),
+            )
+
+    def all_embeddings(self, model: str) -> list[tuple[int, bytes, int]]:
+        rows = self._conn.execute(
+            "SELECT symbol_id, vector, dim FROM embeddings WHERE model=?",
+            (model,),
+        ).fetchall()
+        return [(r["symbol_id"], bytes(r["vector"]), int(r["dim"])) for r in rows]
+
+    def embedding_count(self, model: str | None = None) -> int:
+        if model is None:
+            row = self._conn.execute("SELECT COUNT(*) AS n FROM embeddings").fetchone()
+        else:
+            row = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM embeddings WHERE model=?", (model,)
+            ).fetchone()
+        return int(row["n"] or 0)
+
     def get_symbol_by_id(self, symbol_id: int) -> SymbolRow | None:
         row = self._conn.execute(
             "SELECT s.*, f.path AS file_path FROM symbols s JOIN files f ON s.file_id = f.id "
@@ -397,6 +484,10 @@ def _row_to_symbol(row: sqlite3.Row | None) -> SymbolRow | None:
 
 
 def _row_to_edge(row: sqlite3.Row) -> EdgeRow:
+    try:
+        metadata = json.loads(row["metadata_json"]) if row["metadata_json"] else {}
+    except (TypeError, json.JSONDecodeError, KeyError):
+        metadata = {}
     return EdgeRow(
         src_qname=row["src_qname"],
         dst_qname=row["dst_qname"],
@@ -404,4 +495,28 @@ def _row_to_edge(row: sqlite3.Row) -> EdgeRow:
         edge_type=row["edge_type"],
         confidence=row["confidence"],
         line=row["line"],
+        column=row["column"] if "column" in row.keys() else None,
+        precision_level=int(row["precision_level"]) if "precision_level" in row.keys() else 1,
+        extraction_source=row["extraction_source"] if "extraction_source" in row.keys() else "",
+        reason=row["reason"] if "reason" in row.keys() else "",
+        metadata=metadata,
     )
+
+
+def _normalize_edge_row(row: tuple, created_at: str) -> tuple:
+    if len(row) == 7:
+        src, dst_qname, dst_name, edge_type, confidence, source, line = row
+        return (
+            src, dst_qname, dst_name, edge_type, confidence, source, line,
+            None, int(PrecisionLevel.SYNTAX), "Extracted from legacy parser edge",
+            "{}", created_at,
+        )
+    if len(row) == 12:
+        src, dst_qname, dst_name, edge_type, confidence, source, line, column, precision, reason, metadata, at = row
+        return (
+            src, dst_qname, dst_name, edge_type, confidence, source, line, column,
+            int(precision or PrecisionLevel.SYNTAX), reason or "",
+            json.dumps(metadata or {}) if not isinstance(metadata, str) else metadata,
+            at or created_at,
+        )
+    raise ValueError(f"Expected edge row with 7 or 12 fields, got {len(row)}")

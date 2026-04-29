@@ -27,7 +27,44 @@ def parse_python(source: SourceFile) -> ExtractResult:
 
     visitor = _Visitor(module_qname=module_qname, symbols=symbols, edges=edges, source=source)
     visitor.visit(tree)
+
+    # Module-level constants (UPPER_CASE assignments). PR 13 — closes the gap
+    # for tasks that reference data-shape symbols like `SECRET_FILES`.
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and _is_module_constant(target.id):
+                    qname = f"{module_qname}.{target.id}"
+                    symbols.append(ParsedSymbol(
+                        kind="constant",
+                        name=target.id,
+                        qualified_name=qname,
+                        start_line=node.lineno,
+                        end_line=getattr(node, "end_lineno", node.lineno),
+                        signature=f"{target.id} = ...",
+                        parent_qualified_name=module_qname,
+                    ))
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            if _is_module_constant(node.target.id):
+                qname = f"{module_qname}.{node.target.id}"
+                symbols.append(ParsedSymbol(
+                    kind="constant",
+                    name=node.target.id,
+                    qualified_name=qname,
+                    start_line=node.lineno,
+                    end_line=getattr(node, "end_lineno", node.lineno),
+                    signature=f"{node.target.id}: ...",
+                    parent_qualified_name=module_qname,
+                ))
+
     return ExtractResult(symbols=symbols, edges=edges)
+
+
+def _is_module_constant(name: str) -> bool:
+    if not name or name.startswith("_"):
+        return False
+    # ALL_CAPS_LIKE_THIS — the standard Python convention for module constants.
+    return name == name.upper() and any(ch.isalpha() for ch in name)
 
 
 def _module_qname(rel_path: str) -> str:

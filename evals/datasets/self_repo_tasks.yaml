@@ -1,0 +1,339 @@
+# Phase 2.5 — expanded golden dataset for the CodeGraphKB repo itself.
+#
+# Conventions:
+#   - oracle_files / oracle_symbols  : MUST appear in the retrieved pack.
+#   - should_exclude_files / should_exclude_symbols
+#                                   : MUST NOT appear (used for noise testing).
+#   - mode  : explain | edit | debug | refactor | test | impact | security |
+#             onboarding | feature
+# Match is path-suffix for files and last-segment for symbols.
+
+# ---------- Architecture / explain ----------
+- id: explain_retrieval_pipeline
+  task: "How does the retrieval pipeline work end-to-end?"
+  mode: explain
+  budget: 4000
+  oracle_files:
+    - src/codegraphkb/core/retrieval.py
+    - src/codegraphkb/core/search.py
+    - src/codegraphkb/api.py
+  oracle_symbols:
+    - retrieve_context
+    - search_symbols
+    - classify_intent
+  should_exclude_files:
+    - tests/test_smoke.py
+
+- id: explain_capsules
+  task: "How are Context Capsules generated?"
+  mode: explain
+  budget: 3000
+  oracle_files:
+    - src/codegraphkb/core/capsules.py
+    - src/codegraphkb/core/indexer.py
+  oracle_symbols:
+    - build_symbol_capsule
+    - index_repository
+  should_exclude_files:
+    - tests/test_smoke.py
+
+- id: onboarding_overview
+  task: "Give me a tour of the codebase — where do I start?"
+  mode: onboarding
+  budget: 5000
+  oracle_files:
+    - src/codegraphkb/api.py
+    - src/codegraphkb/cli.py
+  oracle_symbols:
+    - CodeGraphKB
+    - cli
+
+- id: explain_hybrid_retrieval
+  task: "How does hybrid retrieval fuse BM25 and vector seeds?"
+  mode: explain
+  budget: 4000
+  oracle_files:
+    - src/codegraphkb/core/retrieval.py
+  oracle_symbols:
+    - _fuse_seeds
+    - retrieve_context
+
+- id: explain_eval_harness
+  task: "How does the eval harness measure retrieval quality?"
+  mode: explain
+  budget: 4000
+  oracle_files:
+    - src/codegraphkb/eval.py
+  oracle_symbols:
+    - evaluate
+    - _run_task
+    - _aggregate
+
+# ---------- Edit / feature ----------
+- id: edit_token_budget_governor
+  task: "Modify the token budget governor to allocate more budget to snippets in edit mode"
+  mode: edit
+  budget: 5000
+  oracle_files:
+    - src/codegraphkb/core/retrieval.py
+    - src/codegraphkb/core/tokens.py
+  oracle_symbols:
+    - _tier_shares
+    - estimate_tokens
+    - truncate_to_tokens
+
+- id: feature_add_mcp_tool
+  task: "Add a new MCP tool that returns related tests for a symbol"
+  mode: feature
+  budget: 6000
+  oracle_files:
+    - src/codegraphkb/server/mcp_server.py
+    - src/codegraphkb/api.py
+  oracle_symbols:
+    - run_stdio
+    - _handle_tool
+    - related_tests
+
+- id: feature_add_parser_language
+  task: "Add a Go parser backend"
+  mode: feature
+  budget: 6000
+  oracle_files:
+    - src/codegraphkb/core/parsers/registry.py
+    - src/codegraphkb/core/parsers/python_parser.py
+    - src/codegraphkb/core/scanner.py
+  oracle_symbols:
+    - parse
+    - ParserBackend
+    - detect_language
+
+- id: edit_alias_expansion
+  task: "Improve alias expansion so 'token budget' connects to estimate_tokens"
+  mode: edit
+  budget: 5000
+  oracle_files:
+    - src/codegraphkb/core/aliases.py
+    - src/codegraphkb/core/indexer.py
+  oracle_symbols:
+    - build_alias_text
+    - index_repository
+
+- id: edit_capsule_format
+  task: "Tweak the Context Capsule layout to include test references"
+  mode: edit
+  budget: 4000
+  oracle_files:
+    - src/codegraphkb/core/capsules.py
+  oracle_symbols:
+    - build_symbol_capsule
+
+# ---------- Refactor ----------
+- id: refactor_scanner
+  task: "Refactor the scanner to support a custom ignore-rule provider"
+  mode: refactor
+  budget: 4000
+  oracle_files:
+    - src/codegraphkb/core/scanner.py
+    - src/codegraphkb/core/ignore.py
+  oracle_symbols:
+    - scan_repo
+    - IgnoreRules
+
+- id: refactor_store_interface
+  task: "Refactor GraphStore so it can be backed by Neo4j or SQLite"
+  mode: refactor
+  budget: 5000
+  oracle_files:
+    - src/codegraphkb/core/store.py
+  oracle_symbols:
+    - GraphStore
+    - insert_symbol
+    - resolve_edge_targets
+
+# ---------- Debug ----------
+- id: debug_incremental_reindex
+  task: "Why might `codegraph index` re-parse files that didn't change?"
+  mode: debug
+  budget: 4000
+  oracle_files:
+    - src/codegraphkb/core/indexer.py
+    - src/codegraphkb/versioning.py
+  oracle_symbols:
+    - index_repository
+    - parser_signature
+
+- id: debug_empty_pack
+  task: "The Context Pack is empty for some queries — what could cause that?"
+  mode: debug
+  budget: 4000
+  oracle_files:
+    - src/codegraphkb/core/retrieval.py
+    - src/codegraphkb/core/search.py
+  oracle_symbols:
+    - retrieve_context
+    - _fuse_seeds
+    - search_symbols
+
+# ---------- Impact ----------
+- id: impact_graphstore_insert
+  task: "What breaks if I change GraphStore.insert_symbol?"
+  mode: impact
+  budget: 4000
+  oracle_files:
+    - src/codegraphkb/core/store.py
+    - src/codegraphkb/core/indexer.py
+  oracle_symbols:
+    - GraphStore
+    - insert_symbol
+    - index_repository
+
+- id: impact_retrieve_context
+  task: "What depends on retrieve_context — what would I break by changing its signature?"
+  mode: impact
+  budget: 5000
+  oracle_files:
+    - src/codegraphkb/api.py
+    - src/codegraphkb/core/retrieval.py
+    - src/codegraphkb/server/mcp_server.py
+  oracle_symbols:
+    - retrieve_context
+    - ask
+    - _minimal_context
+
+# ---------- Test generation ----------
+- id: test_retrieval
+  task: "Add a unit test for retrieve_context with a small fixture repo"
+  mode: test
+  budget: 5000
+  oracle_files:
+    - tests/test_smoke.py
+    - src/codegraphkb/core/retrieval.py
+  oracle_symbols:
+    - retrieve_context
+    - test_audit_metadata_attached_to_items
+
+- id: test_alias
+  task: "Write a test that confirms alias expansion adds 'token' to estimate_tokens' BM25 doc"
+  mode: test
+  budget: 4000
+  oracle_files:
+    - src/codegraphkb/core/aliases.py
+    - tests/test_smoke.py
+  oracle_symbols:
+    - build_alias_text
+
+# ---------- Security ----------
+- id: security_secret_handling
+  task: "How does the indexer avoid reading .env / credentials files?"
+  mode: security
+  budget: 4000
+  oracle_files:
+    - src/codegraphkb/core/scanner.py
+    - src/codegraphkb/config.py
+  oracle_symbols:
+    - scan_repo
+    - SECRET_FILES
+    - is_probably_binary
+
+# ---------- API usage ----------
+- id: api_usage_kb
+  task: "How do I use the Python API to index a repo and ask a question?"
+  mode: explain
+  budget: 4000
+  oracle_files:
+    - src/codegraphkb/api.py
+  oracle_symbols:
+    - CodeGraphKB
+    - index
+    - ask
+
+- id: api_usage_mcp_edit
+  task: "Show me how to call prepare_edit_context from a coding agent"
+  mode: api_usage
+  budget: 4000
+  oracle_files:
+    - src/codegraphkb/server/mcp_server.py
+  oracle_symbols:
+    - prepare_edit_context
+    - _prepare_edit_context
+
+# ---------- Phase 3 — edit workflow oracles (PR 19) ----------
+# These tasks have edit-specific oracles and are consumed by `codegraph eval-edit`.
+# `codegraph eval` skips them gracefully (it only reads oracle_files / oracle_symbols).
+
+- id: edit_workflow_alias_expansion
+  task: "Add a new alias-expansion stem for `payment`"
+  mode: edit
+  budget: 6000
+  oracle_files_likely_to_edit:
+    - src/codegraphkb/core/aliases.py
+  oracle_symbols_to_modify:
+    - build_alias_text
+  oracle_tests:
+    - tests/test_smoke.py
+  expected_validation_types:
+    - targeted_test
+  risk_keywords:
+    - alias
+
+- id: edit_workflow_capsule_layout
+  task: "Tweak the Context Capsule layout to include a `Risk:` line"
+  mode: edit
+  budget: 6000
+  oracle_files_likely_to_edit:
+    - src/codegraphkb/core/capsules.py
+  oracle_symbols_to_modify:
+    - build_symbol_capsule
+  oracle_tests:
+    - tests/test_smoke.py
+  expected_validation_types:
+    - targeted_test
+  risk_keywords:
+    - capsule
+
+- id: edit_workflow_token_estimator
+  task: "Replace the heuristic token estimator with a more accurate one"
+  mode: edit
+  budget: 6000
+  oracle_files_likely_to_edit:
+    - src/codegraphkb/core/tokens.py
+  oracle_symbols_to_modify:
+    - estimate_tokens
+    - truncate_to_tokens
+  oracle_tests:
+    - tests/test_smoke.py
+  expected_validation_types:
+    - targeted_test
+  risk_keywords:
+    - token
+
+- id: edit_workflow_mcp_tool
+  task: "Add a new MCP tool that returns related tests"
+  mode: edit
+  budget: 6000
+  oracle_files_likely_to_edit:
+    - src/codegraphkb/server/mcp_server.py
+  oracle_symbols_to_modify:
+    - run_stdio
+    - _related_tests
+  oracle_tests:
+    - tests/test_smoke.py
+  expected_validation_types:
+    - targeted_test
+
+- id: edit_workflow_scanner_ignore
+  task: "Add a custom ignore-rule provider to the scanner"
+  mode: edit
+  budget: 6000
+  oracle_files_likely_to_edit:
+    - src/codegraphkb/core/scanner.py
+    - src/codegraphkb/core/ignore.py
+  oracle_symbols_to_modify:
+    - scan_repo
+    - IgnoreRules
+  oracle_tests:
+    - tests/test_smoke.py
+  expected_validation_types:
+    - targeted_test
+  risk_keywords:
+    - secret

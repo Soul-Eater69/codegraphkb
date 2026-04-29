@@ -1,18 +1,24 @@
-"""Language parsers. Each returns a list of Symbol and Edge records."""
+"""Language parsers. Use `registry.parse(source, backend)` for the public path."""
 from __future__ import annotations
 
 from codegraphkb.core.parsers.base import ExtractResult, ParsedEdge, ParsedSymbol
-from codegraphkb.core.parsers.js_parser import parse_javascript
-from codegraphkb.core.parsers.python_parser import parse_python
+from codegraphkb.core.parsers.registry import ParserBackend, ParserChoice, parse, is_treesitter_available
 from codegraphkb.core.scanner import SourceFile
 
 
-def parse_file(source: SourceFile) -> ExtractResult:
-    if source.language == "python":
-        return parse_python(source)
-    if source.language in ("javascript", "typescript"):
-        return parse_javascript(source)
-    return ExtractResult(symbols=[], edges=[])
+def parse_file(source: SourceFile, backend: ParserBackend = ParserBackend.AUTO) -> ExtractResult:
+    """Backwards-compatible parse helper used by older callers."""
+    result, _ = parse(source, backend=backend)
+    return result
 
 
-__all__ = ["parse_file", "ParsedSymbol", "ParsedEdge", "ExtractResult"]
+__all__ = [
+    "parse",
+    "parse_file",
+    "ParserBackend",
+    "ParserChoice",
+    "ParsedSymbol",
+    "ParsedEdge",
+    "ExtractResult",
+    "is_treesitter_available",
+]

@@ -18,6 +18,7 @@ env/
 
 # CodeGraphKB local index
 .codegraphkb/
+reports/
 
 # OS
 .DS_Store

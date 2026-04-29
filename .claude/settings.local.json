@@ -12,7 +12,15 @@
       "Bash(codegraph stats *)",
       "Bash(codegraph ask *)",
       "Bash(codegraph find *)",
-      "Bash(codegraph impact *)"
+      "Bash(codegraph impact *)",
+      "Bash(codegraph eval *)",
+      "Bash(py -3 -c ' *)",
+      "Bash(codegraph doctor *)",
+      "Bash(codegraph serve *)",
+      "Bash(py -3 -m pytest tests/ -q)",
+      "Bash(py -3 -m pip install -e \".[embeddings]\" --quiet)",
+      "Bash(py -3 -m pip install numpy sentence-transformers --quiet)",
+      "Bash(py -3 -c \"from sentence_transformers import SentenceTransformer; m=SentenceTransformer\\('sentence-transformers/all-MiniLM-L6-v2'\\); print\\('dim:', m.get_sentence_embedding_dimension\\(\\)\\)\")"
     ]
   }
 }

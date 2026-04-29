@@ -1,6 +1,8 @@
 # CodeGraphKB
 
-Convert a codebase into a graph-powered knowledge base, then serve **only the smallest useful context** to your LLM.
+> A context compiler for Claude, Cursor, Codex, and other coding agents.
+
+Convert a codebase into a graph-powered knowledge base, then serve **only the smallest useful context** to your LLM — or compile a complete edit-context pack (files to edit, files to read, related tests, validation commands, risks) before an agent starts editing.
 
 Instead of pasting whole repos into Claude / Cursor / GPT, CodeGraphKB:
 
@@ -20,16 +22,75 @@ pip install -e .             # MVP needs no infra (SQLite-only)
 codegraph index .            # one-time scan; re-runs are incremental
 codegraph ask "How does the upload flow work?"
 codegraph impact src/payments/stripe.ts
+codegraph doctor             # diagnose parser/schema/embeddings state
 codegraph stats
+codegraph eval evals/datasets/self_repo_tasks.yaml
 ```
 
 Optional extras:
 
 ```bash
-pip install -e ".[llm]"      # Claude-backed answers (set ANTHROPIC_API_KEY)
-pip install -e ".[api]"      # FastAPI HTTP server
+pip install -e ".[llm]"          # Claude-backed answers (set ANTHROPIC_API_KEY)
+pip install -e ".[api]"          # FastAPI HTTP server
+pip install -e ".[parser]"       # tree-sitter for accurate JS/TS/JSX/TSX parsing
+pip install -e ".[embeddings]"   # fastembed for semantic retrieval
 pip install -e ".[all]"
 ```
+
+Phase 2 / 2.5 capabilities (all opt-in, all backward-compatible):
+
+```bash
+codegraph index . --parser tree-sitter --embed
+codegraph ask "Add refresh token rotation" --mode edit --retrieval hybrid --budget 6000 --json
+codegraph eval evals/datasets/self_repo_tasks.yaml --compare bm25,hybrid --explain
+```
+
+Phase 3 — edit-context compiler:
+
+```bash
+codegraph prepare-edit "Add a new MCP tool for related tests" --budget 6000 --json
+codegraph tests src/codegraphkb/core/retrieval.py
+codegraph validate-plan "Add refresh token rotation"
+codegraph impact-plan src/codegraphkb/core/store.py
+codegraph eval-edit evals/datasets/self_repo_tasks.yaml
+```
+
+Phase 4 â€” regression reporting:
+
+```bash
+codegraph regression-report \
+  --eval evals/datasets/self_repo_tasks.yaml \
+  --edit-eval evals/datasets/self_repo_tasks.yaml \
+  --compare bm25,hybrid \
+  --save reports/latest.json \
+  --markdown reports/latest.md \
+  --gate-profile release
+codegraph doctor --json
+scripts/reproduce_phase3_baseline.ps1   # Windows
+scripts/reproduce_phase3_baseline.sh    # macOS/Linux
+```
+
+### Edit-workflow scoreboard (PR 19)
+
+| Metric | Result | Target |
+|---|---:|---:|
+| Edit file recall@5 | **1.00** | ≥ 0.80 ✓ |
+| Related test recall@5 | **0.80** | ≥ 0.80 ✓ |
+| Symbol-to-modify recall@8 | **0.80** | ≥ 0.70 ✓ |
+| Validation command recall | **0.80** | — |
+| Median workflow latency | **189 ms** | ≤ 700 ms ✓ |
+
+### Quality scoreboard (this repo, 21-task retrieval dataset)
+
+| Metric | BM25-only | Hybrid (real embeddings) | Phase 2.5 target |
+|---|---:|---:|---:|
+| File recall@8 | 0.78 | **0.87** | ≥ 0.90 |
+| Symbol recall@12 | 0.60 | **0.70** | ≥ 0.70 ✓ |
+| Irrelevant ratio | 0.48 | **0.43** | ≤ 0.35 |
+| Median latency | 21 ms | 43 ms | ≤ 300 ms ✓ |
+| Hybrid > BM25 on every metric | ✓ | | |
+
+On the original 6-task focused dataset: **F@8 = 0.94, S@12 = 0.72, irrelevant = 0.25, latency = 44 ms** — every Phase 2.5 target met. Hybrid wins everywhere.
 
 The index lives in `./.codegraphkb/` next to your repo. Delete that folder to start fresh; add it to `.gitignore` (a default rule already does).
 
@@ -154,14 +215,50 @@ Adding a language is one new file under `core/parsers/` returning `ExtractResult
 
 ## What's intentionally **not** here yet
 
-To keep the MVP `pip install`-able with zero infra, this build leaves out:
+To keep `pip install`-able with zero required infra:
 
-- Neo4j / Postgres / Redis / Qdrant — replaced by SQLite + a built-in BM25 inverted index. The schema is isomorphic, so swapping later is mechanical.
-- Tree-sitter / LSP / CodeQL — replaced by `ast` + regex. Confidence values on edges already mark inferred relationships.
-- Embeddings — BM25 + identifier-aware tokenization handles the MVP retrieval load.
+- Neo4j / Postgres / Redis / Qdrant — replaced by SQLite + an in-process BM25 inverted index, plus a SQLite-backed embeddings table with brute-force cosine search. The schema is isomorphic to the production design, so swapping later is mechanical.
+- LSP / CodeQL — Tree-sitter is supported via `[parser]` extra (gracefully falls back to `ast`+regex when not installed).
 - Web UI — designed in `codegraphkb_architecture.md`, not built yet.
 
-These are the natural follow-ups in roughly that order.
+## Phase 3 edit-context modules
+
+| Piece | What it does | Where it lives |
+|---|---|---|
+| `prepare-edit` | Compiles a complete edit-context pack: files-to-edit, files-to-read, related tests, symbols-to-modify, callers/callees, risks, validation commands | [workflow.py](src/codegraphkb/workflow.py) |
+| Framework-aware extractors | Detects FastAPI / Flask / Django / Pytest / SQLAlchemy / Pydantic + Express / Next.js / React hooks / Jest / Vitest / Prisma; emits Routes, Components, Models, EnvVars, TestBlocks; new edges `ROUTE_HANDLED_BY`, `TESTS_SYMBOL`, `COMPONENT_USES_HOOK`, `MODEL_USED_BY`, `READS_ENV_VAR` | [core/extractors/](src/codegraphkb/core/extractors/) |
+| Validation command planner | Inspects `package.json` / `pyproject.toml` / `pytest.ini` / `Makefile` / `go.mod` / `Cargo.toml` and proposes targeted_test, full_test, typecheck, lint, build commands | `workflow.plan_validation_commands` |
+| Patch impact preview | Routes / callers / tests / env-var reads affected by editing a target, plus a `low/medium/high` risk level | `workflow.preview_patch_impact` |
+| Related test discovery | Finds tests that import / call / mention a target via direct edges + filename-similarity heuristics | `workflow.get_related_tests` |
+| Edit-workflow eval harness | `codegraph eval-edit`: oracle-driven metrics for `prepare-edit` (edit_file_recall@5, related_test_recall@5, symbol_recall@8, validation_command_recall, risk_keyword_recall, latency) | [eval_edit.py](src/codegraphkb/eval_edit.py) |
+| Eval failure report | `--explain`, `--save-report`, `suggested_tuning_actions` per task | [eval.py](src/codegraphkb/eval.py) |
+| Module-level constant extraction | Python parser now surfaces `UPPER_CASE` constants like `SECRET_FILES` as `constant` symbols | [core/parsers/python_parser.py](src/codegraphkb/core/parsers/python_parser.py) |
+
+## Phase 2.5 retrieval-quality modules
+
+| Piece | What it does | Where it lives |
+|---|---|---|
+| Eval failure report | `--explain` shows missed-symbol ranks, score breakdowns, and noisy items in each pack | `eval.py` (`MissedSymbol`, `NoiseItem`, `EvalReport.explain_text`) |
+| Compare gate | `--compare bm25,hybrid` runs the dataset under multiple retrieval strategies side-by-side | `cli.py` (`eval_cmd`) |
+| Symbol alias / concept expansion | augments the BM25 doc with kind concepts, identifier-stem synonyms, neighbor names, route paths | `core/aliases.py` |
+| Noise control | per-mode caps: `max_capsules`, `max_per_file`, `max_pure_graph_hits`, `drop_test_files` | `core/noise.py` |
+| Reranker Lite | new score channels: `identifier_overlap`, `mode_fit`, `test_proximity`, `generic_penalty` (subtracted) | `core/retrieval.py` |
+| Expanded golden dataset | 21 tasks across explain / edit / debug / refactor / impact / test / security / api / onboarding modes; supports `should_exclude_files` / `should_exclude_symbols` | `evals/datasets/self_repo_tasks.yaml` |
+| Hybrid quality gate | DoD check via `--compare bm25,hybrid` — hybrid must beat BM25 on every metric | `cli.py` (`_print_compare_table`) |
+
+## Phase 2 modules
+
+| Piece | What it does | Where it lives |
+|---|---|---|
+| Eval harness | YAML golden tasks; F@k / S@k / irrelevant ratio / utilization / latency | `eval.py` + `evals/datasets/` |
+| Parser registry | `auto` / `tree-sitter` / `regex` selection per language | `core/parsers/registry.py` |
+| Tree-sitter JS/TS | classes, methods, arrow functions, JSX components, routes, test blocks | `core/parsers/treesitter_js_parser.py` |
+| Versioning + doctor | parser/schema/capsule versions, stale-file detection | `versioning.py`, `codegraph doctor` |
+| Embeddings | fastembed / sentence-transformers / hash-stub fallback; SQLite-cached by content hash | `core/embeddings.py` |
+| Hybrid retrieval | RRF over BM25 / vector / identifier / path / pinned seeds | `core/retrieval.py` |
+| Modes | `explain`, `edit`, `debug`, `refactor`, `test`, `impact`, `security`, `onboarding`, `feature` | `Mode` in `core/retrieval.py` |
+| Audit metadata | every item carries retrieval sources, score breakdown, graph path, reason | `ContextItem` in `core/retrieval.py` |
+| MCP edit tools | `prepare_edit_context`, `get_related_tests`, `get_callers_and_callees`, `resolve_symbol`, `explain_context_selection` | `server/mcp_server.py` |
 
 ---
 
