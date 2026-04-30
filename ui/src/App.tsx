@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   getGraph,
   getImpact,
+  getNeighborhood,
   getNode,
   getProcess,
   getProcesses,
@@ -11,7 +12,7 @@ import {
 import { AskPanel } from "./components/AskPanel";
 import { DetailsPanel } from "./components/DetailsPanel";
 import { FiltersPanel } from "./components/FiltersPanel";
-import { GraphCanvasPlaceholder } from "./components/GraphCanvasPlaceholder";
+import { GraphCanvas } from "./components/GraphCanvas";
 import { ImpactPanel } from "./components/ImpactPanel";
 import { ProcessPanel } from "./components/ProcessPanel";
 import { Sidebar, type SidebarTab } from "./components/Sidebar";
@@ -38,6 +39,9 @@ export default function App() {
 
   const [selectedDetailsTitle, setSelectedDetailsTitle] = useState("Selection");
   const [selectedDetails, setSelectedDetails] = useState<unknown>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [highlightedNodeIds, setHighlightedNodeIds] = useState<Set<string>>(new Set());
 
   const [selectedNodeKinds, setSelectedNodeKinds] = useState<Set<string>>(new Set());
   const [selectedEdgeTypes, setSelectedEdgeTypes] = useState<Set<string>>(new Set());
@@ -73,25 +77,6 @@ export default function App() {
     [graph],
   );
 
-  const filteredCounts = useMemo(() => {
-    const nodes = graph?.nodes ?? [];
-    const edges = graph?.edges ?? [];
-    const visibleNodes =
-      selectedNodeKinds.size === 0
-        ? nodes
-        : nodes.filter((n) => selectedNodeKinds.has(n.kind));
-    const visibleNodeIds = new Set(visibleNodes.map((n) => n.id));
-    const visibleEdges = edges.filter((e) => {
-      const typeVisible =
-        selectedEdgeTypes.size === 0 || selectedEdgeTypes.has(e.type);
-      return typeVisible && visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target);
-    });
-    return {
-      nodeCount: visibleNodes.length,
-      edgeCount: visibleEdges.length,
-    };
-  }, [graph, selectedNodeKinds, selectedEdgeTypes]);
-
   async function loadSummary() {
     setLoadingSummary(true);
     setErrorSummary(null);
@@ -114,6 +99,9 @@ export default function App() {
       setSelectedDetails(payload.metadata);
       setSelectedNodeKinds(new Set());
       setSelectedEdgeTypes(new Set());
+      setSelectedNodeId(null);
+      setSelectedEdgeId(null);
+      setHighlightedNodeIds(new Set());
     } catch (err) {
       setErrorGraph(err instanceof Error ? err.message : String(err));
     } finally {
@@ -161,9 +149,18 @@ export default function App() {
     setLoadingDetails(true);
     setErrorDetails(null);
     try {
+      if (!isNodeVisibleInGraph(result.id)) {
+        const neighborhood = await getNeighborhood(result.id, 2);
+        setGraph(neighborhood);
+        setSelectedDetailsTitle(`Neighborhood: ${result.label}`);
+        setSelectedDetails(neighborhood.metadata);
+      }
       const details = await getNode(result.id);
       setSelectedDetailsTitle(`Node: ${result.label}`);
       setSelectedDetails(details);
+      setSelectedNodeId(result.id);
+      setSelectedEdgeId(null);
+      setHighlightedNodeIds(new Set([result.id]));
     } catch (err) {
       setErrorDetails(err instanceof Error ? err.message : String(err));
     } finally {
@@ -176,8 +173,16 @@ export default function App() {
     setErrorDetails(null);
     try {
       const proc = await getProcess(processId);
+      const processNodeId = `process:${processId}`;
+      if (!isNodeVisibleInGraph(processNodeId)) {
+        const neighborhood = await getNeighborhood(processNodeId, 2);
+        setGraph(neighborhood);
+      }
       setSelectedDetailsTitle(`Process: ${proc.label}`);
       setSelectedDetails(proc);
+      setSelectedNodeId(processNodeId);
+      setSelectedEdgeId(null);
+      setHighlightedNodeIds(new Set([processNodeId]));
     } catch (err) {
       setErrorDetails(err instanceof Error ? err.message : String(err));
     } finally {
@@ -195,8 +200,12 @@ export default function App() {
     try {
       const payload = await getImpact(target);
       setImpactGraph(payload);
+      setGraph(payload);
       setSelectedDetailsTitle(`Impact: ${target}`);
       setSelectedDetails(payload.metadata);
+      setSelectedNodeId(null);
+      setSelectedEdgeId(null);
+      setHighlightedNodeIds(new Set());
       setActiveTab("Impact");
     } catch (err) {
       setErrorImpact(err instanceof Error ? err.message : String(err));
@@ -211,6 +220,37 @@ export default function App() {
 
   function toggleEdgeType(type: string) {
     setSelectedEdgeTypes((prev) => toggleSelection(prev, type));
+  }
+
+  async function selectNodeById(nodeId: string) {
+    setLoadingDetails(true);
+    setErrorDetails(null);
+    try {
+      const details = await getNode(nodeId);
+      const label = extractNodeLabel(details) ?? nodeId;
+      setSelectedDetailsTitle(`Node: ${label}`);
+      setSelectedDetails(details);
+      setSelectedNodeId(nodeId);
+      setSelectedEdgeId(null);
+      setHighlightedNodeIds(new Set([nodeId]));
+    } catch (err) {
+      setErrorDetails(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoadingDetails(false);
+    }
+  }
+
+  function clearSelection() {
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+    setHighlightedNodeIds(new Set());
+  }
+
+  function isNodeVisibleInGraph(nodeId: string): boolean {
+    if (!graph) {
+      return false;
+    }
+    return graph.nodes.some((n) => n.id === nodeId);
   }
 
   return (
@@ -319,13 +359,25 @@ export default function App() {
           />
         </Sidebar>
 
-        <GraphCanvasPlaceholder
+        <GraphCanvas
           view={view}
           graph={graph}
-          filteredNodeCount={filteredCounts.nodeCount}
-          filteredEdgeCount={filteredCounts.edgeCount}
           loading={loadingGraph}
           error={errorGraph}
+          selectedNodeKinds={selectedNodeKinds}
+          selectedEdgeTypes={selectedEdgeTypes}
+          selectedNodeId={selectedNodeId}
+          selectedEdgeId={selectedEdgeId}
+          highlightedNodeIds={highlightedNodeIds}
+          onNodeSelect={(nodeId) => void selectNodeById(nodeId)}
+          onStageClick={clearSelection}
+          onEdgeSelect={(edgeId, edgeData) => {
+            setSelectedEdgeId(edgeId);
+            setSelectedNodeId(null);
+            setSelectedDetailsTitle(`Edge: ${edgeId}`);
+            setSelectedDetails(edgeData);
+          }}
+          onClearSelection={clearSelection}
         />
 
         <DetailsPanel
@@ -355,4 +407,16 @@ function toggleSelection(source: Set<string>, value: string): Set<string> {
     next.add(value);
   }
   return next;
+}
+
+function extractNodeLabel(details: unknown): string | null {
+  if (typeof details !== "object" || details == null) {
+    return null;
+  }
+  const node = (details as { node?: Record<string, unknown> }).node;
+  if (!node) {
+    return null;
+  }
+  const label = node.label;
+  return typeof label === "string" ? label : null;
 }

@@ -6,7 +6,7 @@ CodeGraphKB converts a codebase into a graph-powered knowledge base and serves t
 
 ## Current Phase
 
-Phase UI-2: React frontend shell for local interactive graph UI.
+Phase UI-3: Sigma.js + Graphology interactive graph canvas.
 
 ## Commands
 
@@ -30,8 +30,8 @@ npm run build
 - Do not add SaaS/auth/GitHub OAuth.
 - Do not break existing CLI commands.
 - Keep UI local-first.
-- Do not implement Sigma graph rendering in UI-2.
 - Use backend APIs from Phase UI-1.
+- Preserve UI shell behavior from UI-2 while replacing placeholder with real canvas.
 - Preserve static graph export.
 
 ## Testing

@@ -136,6 +136,7 @@ button:disabled {
 
 .sidebar,
 .graph-placeholder,
+.graph-canvas-panel,
 .details-panel {
   min-height: 0;
   overflow: auto;
@@ -191,6 +192,113 @@ button:disabled {
 
 .graph-placeholder {
   background: radial-gradient(ellipse at 20% 10%, #111930 0%, #080d17 45%, #060a12 100%);
+}
+
+.graph-canvas-panel {
+  background: radial-gradient(ellipse at 22% 8%, #101a31 0%, #08101d 48%, #050910 100%);
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.graph-canvas-wrap {
+  position: relative;
+  min-height: 0;
+}
+
+.sigma-container {
+  width: 100%;
+  height: 100%;
+  min-height: 520px;
+}
+
+.sigma-container.hidden {
+  display: none;
+}
+
+.graph-controls {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 6px;
+  z-index: 30;
+  background: rgba(8, 13, 24, 0.78);
+  border: 1px solid #22304a;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.graph-controls button {
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 28;
+  background: rgba(8, 13, 24, 0.62);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+}
+
+.error-box {
+  color: #fecaca;
+}
+
+.warning-box {
+  color: #fef3c7;
+}
+
+.layout-pill {
+  margin-left: 10px;
+  border: 1px solid #334155;
+  border-radius: 999px;
+  font-size: 11px;
+  color: #a3b9d4;
+  padding: 2px 8px;
+  vertical-align: middle;
+}
+
+.layout-pill.running {
+  border-color: #0f766e;
+  color: #6ee7b7;
+}
+
+.graph-hint {
+  position: absolute;
+  left: 14px;
+  bottom: 10px;
+  z-index: 29;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: rgba(8, 13, 24, 0.85);
+  color: #c9d8ea;
+  font-size: 12px;
+  padding: 8px 10px;
+  max-width: 70%;
+}
+
+.hover-tooltip {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  z-index: 31;
+  display: grid;
+  gap: 2px;
+  border: 1px solid #33507a;
+  border-radius: 8px;
+  background: rgba(6, 12, 25, 0.92);
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.hover-tooltip span {
+  color: var(--muted);
 }
 
 .placeholder-stats {

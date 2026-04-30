@@ -140,3 +140,69 @@ FastAPI TestClient smoke:
 Run `codegraph serve ui` and execute the UI-2 manual browser checklist.
 Then proceed to phase4/ui-sigma-graph once shell behavior is accepted.
 ```
+
+## Handoff - 2026-04-30 01:10 America/Chicago
+
+### Phase
+phase4/ui-sigma-graph
+
+### Agent
+Codex
+
+### Task
+Replaced placeholder-centric center panel with a real Sigma.js + Graphology graph canvas, including layout control, node/edge selection behavior, reducer-based filtering/highlighting, and neighborhood fallback from search/process selection.
+
+### Files Changed
+- `AGENTS.md`
+- `docs/agent_handoff.md`
+- `ui/package.json`
+- `ui/package-lock.json`
+- `ui/src/App.tsx`
+- `ui/src/styles.css`
+- `ui/src/components/GraphCanvas.tsx`
+- `ui/src/graph/adapter.ts`
+- `ui/src/graph/styles.ts`
+- `ui/src/graph/layout.ts`
+- `ui/src/graph/filters.ts`
+- `ui/src/hooks/useSigma.ts`
+
+### Commands Run
+```bash
+cd ui
+npm install sigma graphology graphology-layout-forceatlas2 graphology-layout-noverlap graphology-layout-force graphology-utils @sigma/edge-curve
+npm run build
+npm run build
+```
+
+### Tests Run
+```bash
+Frontend:
+  cd ui
+  npm run build
+```
+
+### What Passed
+- Sigma/Graphology dependencies installed.
+- TypeScript build passed.
+- Vite production build passed.
+- App now uses `GraphCanvas` instead of `GraphCanvasPlaceholder`.
+- Search selection now supports neighborhood fallback if selected node is not in current slice.
+- Node and edge selection paths update Details panel data.
+- Canvas reducers apply node kind / edge type filter visibility and selection-based dim/highlight.
+
+### What Failed / Blocked
+- Initial dependency install needed network escalation due cache-only sandbox mode.
+- No full browser manual checklist was executed in this handoff entry.
+
+### Next Recommended Step
+```text
+Run:
+1) codegraph index . --force
+2) codegraph serve ui
+3) Manual UI-3 browser checklist:
+   - verify repo/symbols/calls/framework/processes render
+   - verify node click and edge click details
+   - verify search focus + neighborhood fallback
+   - verify filters affect rendered graph
+   - verify layout controls and large-graph warning behavior
+```
