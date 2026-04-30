@@ -55,7 +55,7 @@ export function FiltersPanel({
           </li>
         ))}
       </ul>
-      <p className="muted notice">UI-2 filters update counts; canvas filtering lands in UI-3.</p>
+      <p className="muted notice">Tip: leave all unchecked to show everything in this perspective.</p>
     </div>
   );
 }

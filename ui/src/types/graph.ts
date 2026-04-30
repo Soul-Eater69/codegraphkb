@@ -54,6 +54,11 @@ export interface SummaryResponse {
   edges?: number;
   processes?: number;
   languages?: Record<string, number>;
+  node_kinds?: Record<string, number>;
+  edge_types?: Record<string, number>;
+  index_health?: string | Record<string, unknown>;
+  stale_files?: number;
+  indexed_at?: string;
   [key: string]: unknown;
 }
 
@@ -80,6 +85,7 @@ export interface NodeDetails {
 
 export interface ProcessSummary {
   id: string;
+  node_id?: string;
   label: string;
   process_type: string;
   entrypoint_id?: string;
@@ -99,6 +105,25 @@ export interface ProcessStep {
 
 export interface ProcessDetails extends ProcessSummary {
   steps: ProcessStep[];
+}
+
+export interface FileTreeNode {
+  name: string;
+  type: "folder" | "file";
+  path: string;
+  children?: FileTreeNode[];
+  file_count?: number;
+  symbol_count?: number;
+}
+
+export interface NodeRelations {
+  callers?: Array<Record<string, unknown>>;
+  callees?: Array<Record<string, unknown>>;
+  tests?: Array<Record<string, unknown>>;
+  processes?: Array<Record<string, unknown>>;
+  routes?: Array<Record<string, unknown>>;
+  imports?: Array<Record<string, unknown>>;
+  [key: string]: unknown;
 }
 
 export interface ContextRequest {

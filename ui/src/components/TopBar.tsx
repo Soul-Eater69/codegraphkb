@@ -9,6 +9,10 @@ interface TopBarProps {
   onSearchSubmit: () => void;
   loading: boolean;
   onAskClick: () => void;
+  leftCollapsed: boolean;
+  rightCollapsed: boolean;
+  onToggleLeft: () => void;
+  onToggleRight: () => void;
 }
 
 const views: GraphView[] = ["repo", "symbols", "calls", "framework", "processes", "full"];
@@ -22,15 +26,16 @@ export function TopBar({
   onSearchSubmit,
   loading,
   onAskClick,
+  leftCollapsed,
+  rightCollapsed,
+  onToggleLeft,
+  onToggleRight,
 }: TopBarProps) {
   return (
     <header className="topbar">
-      <div className="brand">
-        <h1>CodeGraphKB</h1>
-        <p title={summary?.repo_path || ""}>{summary?.repo || "repo"}</p>
-        <p className="brand-metrics">
-          f {summary?.files ?? 0} · s {summary?.symbols ?? 0} · e {summary?.edges ?? 0} · p {summary?.processes ?? 0}
-        </p>
+      <div className="topbar-brand">
+        <strong>CodeGraphKB</strong>
+        <span title={summary?.repo_path || ""}>{summary?.repo || "repo"}</span>
       </div>
 
       <div className="topbar-search">
@@ -52,7 +57,7 @@ export function TopBar({
 
       <div className="topbar-controls">
         <label>
-          View
+          <span>View</span>
           <select value={view} onChange={(e) => onViewChange(e.target.value as GraphView)}>
             {views.map((v) => (
               <option key={v} value={v}>
@@ -61,8 +66,23 @@ export function TopBar({
             ))}
           </select>
         </label>
+        <div className="topbar-metrics">
+          <span>{summary?.files ?? 0} files</span>
+          <span>{summary?.symbols ?? 0} symbols</span>
+          <span>{summary?.edges ?? 0} edges</span>
+          <span>{summary?.processes ?? 0} processes</span>
+        </div>
+        <span className={`health-pill ${summary?.index_health === "stale" ? "stale" : "ok"}`}>
+          {summary?.index_health === "stale" ? "stale index" : "index healthy"}
+        </span>
+        <button type="button" title="Toggle explorer panel" onClick={onToggleLeft}>
+          {leftCollapsed ? "◧" : "◨"}
+        </button>
+        <button type="button" title="Toggle inspector panel" onClick={onToggleRight}>
+          {rightCollapsed ? "◨" : "◧"}
+        </button>
         <button type="button" onClick={onAskClick}>
-          Ask CodeGraphKB
+          Ask
         </button>
       </div>
     </header>

@@ -17,6 +17,10 @@ export function ImpactPanel({
   error,
   impactGraph,
 }: ImpactPanelProps) {
+  const nodeCount = impactGraph?.nodes.length ?? 0;
+  const edgeCount = impactGraph?.edges.length ?? 0;
+  const severity = nodeCount > 200 ? "High" : nodeCount > 80 ? "Medium" : "Low";
+
   return (
     <div className="impact-panel">
       <h3>Impact</h3>
@@ -40,12 +44,13 @@ export function ImpactPanel({
       {impactGraph ? (
         <div className="impact-result">
           <p>
-            Nodes <strong>{impactGraph.nodes.length}</strong> · Edges <strong>{impactGraph.edges.length}</strong>
+            Nodes <strong>{nodeCount}</strong> · Edges <strong>{edgeCount}</strong>
           </p>
           <p className="muted">Target: {String(impactGraph.metadata?.target ?? impactTarget)}</p>
+          <p className={`risk-badge risk-${severity.toLowerCase()}`}>Risk {severity}</p>
         </div>
       ) : (
-        <p className="muted">Run an impact query to inspect a local impact graph slice.</p>
+        <p className="muted">Run an impact query to inspect blast radius and related symbols.</p>
       )}
     </div>
   );

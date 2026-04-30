@@ -1,9 +1,11 @@
 import type {
   ContextRequest,
   ContextResponse,
+  FileTreeNode,
   GraphPayload,
   GraphView,
   NodeDetails,
+  NodeRelations,
   ProcessDetails,
   ProcessSummary,
   SearchResponse,
@@ -58,6 +60,10 @@ export async function getNode(nodeId: string): Promise<NodeDetails> {
   return request<NodeDetails>(`/api/node/${encodeURIComponent(nodeId)}`);
 }
 
+export async function getNodeRelations(nodeId: string): Promise<NodeRelations> {
+  return request<NodeRelations>(`/api/node/${encodeURIComponent(nodeId)}/relations`);
+}
+
 export async function getNeighborhood(nodeId: string, depth = 2): Promise<GraphPayload> {
   const params = new URLSearchParams({
     node_id: nodeId,
@@ -78,6 +84,10 @@ export async function getProcess(processId: string): Promise<ProcessDetails> {
 export async function getImpact(target: string): Promise<GraphPayload> {
   const params = new URLSearchParams({ target });
   return request<GraphPayload>(`/api/impact?${params.toString()}`);
+}
+
+export async function getFilesTree(): Promise<FileTreeNode> {
+  return request<FileTreeNode>("/api/files/tree");
 }
 
 export async function createContext(requestBody: ContextRequest): Promise<ContextResponse> {

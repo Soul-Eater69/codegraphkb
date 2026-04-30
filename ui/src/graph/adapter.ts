@@ -21,6 +21,7 @@ export interface SigmaNodeAttributes {
 export interface SigmaEdgeAttributes {
   size: number;
   color: string;
+  type: string;
   edgeType: string;
   confidence?: number;
   precisionLevel?: number;
@@ -81,6 +82,7 @@ export function graphPayloadToGraphology(payload: GraphPayload): SigmaGraph {
     graph.addEdgeWithKey(key, edge.source, edge.target, {
       size: edge.type === "STEP_IN_PROCESS" ? 1.8 : 1.1,
       color: edgeColor(edge.type),
+      type: "curved",
       edgeType: edge.type || "UNKNOWN",
       confidence: edge.confidence,
       precisionLevel: edge.precision_level,

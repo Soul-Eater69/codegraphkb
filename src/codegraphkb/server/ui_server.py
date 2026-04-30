@@ -47,8 +47,19 @@ def build_ui_app(repo_path: str):
             stats = kb.stats()
         except FileNotFoundError as exc:
             raise HTTPException(404, str(exc))
+        store = _open_store_or_404(kb)
+        try:
+            node_kind_rows = store._conn.execute(
+                "SELECT kind, COUNT(*) AS n FROM symbols GROUP BY kind"
+            ).fetchall()
+            edge_type_rows = store._conn.execute(
+                "SELECT edge_type, COUNT(*) AS n FROM edges GROUP BY edge_type"
+            ).fetchall()
+        finally:
+            store.close()
         process_count = len(kb.list_processes(limit=100000))
-        stale = kb.doctor().get("stale_file_count", 0)
+        doctor = kb.doctor()
+        stale = doctor.get("stale_file_count", 0)
         return {
             "repo": Path(stats["repo_path"]).name,
             "repo_path": stats["repo_path"],
@@ -60,6 +71,15 @@ def build_ui_app(repo_path: str):
             "indexed_at": stats.get("last_indexed_at"),
             "index_health": "ok" if stale == 0 else "stale",
             "stale_files": stale,
+            "node_kinds": {r["kind"]: int(r["n"]) for r in node_kind_rows},
+            "edge_types": {r["edge_type"]: int(r["n"]) for r in edge_type_rows},
+            "index_health_details": {
+                "schema_version": stats.get("schema_version"),
+                "parser_backend_pref": stats.get("parser_backend_pref"),
+                "embedding_model": stats.get("embedding_model"),
+                "stale_files": stale,
+                "doctor": doctor,
+            },
         }
 
     @app.get("/api/graph")
@@ -89,6 +109,25 @@ def build_ui_app(repo_path: str):
             return {"query": q, "results": _search_graph(store, kb, q, limit)}
         finally:
             store.close()
+
+    @app.get("/api/files/tree")
+    def files_tree() -> dict[str, Any]:
+        store = _open_store_or_404(kb)
+        try:
+            return _build_file_tree(store, kb)
+        finally:
+            store.close()
+
+    @app.get("/api/node/{node_id:path}/relations")
+    def node_relations(node_id: str) -> dict[str, Any]:
+        store = _open_store_or_404(kb)
+        try:
+            details = _node_details(store, kb, node_id)
+        finally:
+            store.close()
+        if details is None:
+            raise HTTPException(404, f"Node `{node_id}` not found")
+        return _node_relations(details)
 
     @app.get("/api/node/{node_id:path}")
     def node_details(node_id: str) -> dict[str, Any]:
@@ -137,14 +176,15 @@ def build_ui_app(repo_path: str):
 
     @app.get("/api/processes")
     def processes(process_type: str | None = None, limit: int = Query(100, ge=1, le=2000)) -> dict[str, Any]:
-        return {"processes": kb.list_processes(process_type=process_type, limit=limit)}
+        raw = kb.list_processes(process_type=process_type, limit=limit)
+        return {"processes": [_with_process_node_id(p) for p in raw]}
 
     @app.get("/api/processes/{process_id}")
     def process_details(process_id: str) -> dict[str, Any]:
         proc = kb.get_process(process_id)
         if proc is None:
             raise HTTPException(404, f"Process `{process_id}` not found")
-        return proc
+        return _with_process_node_id(proc)
 
     @app.get("/api/impact")
     def impact(
@@ -551,6 +591,110 @@ def _pack_dict(pack) -> dict[str, Any]:
         ],
         "repo_map": pack.repo_map,
     }
+
+
+def _with_process_node_id(process: dict[str, Any]) -> dict[str, Any]:
+    pid = str(process.get("id", "")).strip()
+    out = dict(process)
+    if pid:
+        out["node_id"] = f"process:{pid}"
+    return out
+
+
+def _node_relations(details: dict[str, Any]) -> dict[str, Any]:
+    relationships = details.get("relationships") if isinstance(details, dict) else None
+    if not isinstance(relationships, dict):
+        return {
+            "callers": [],
+            "callees": [],
+            "tests": [],
+            "processes": [],
+            "routes": [],
+            "imports": [],
+        }
+    return {
+        "callers": relationships.get("callers", []),
+        "callees": relationships.get("callees", []),
+        "tests": relationships.get("related_tests", relationships.get("tests", [])),
+        "processes": relationships.get("processes", []),
+        "routes": relationships.get("routes", []),
+        "imports": relationships.get("imports", []),
+    }
+
+
+def _build_file_tree(store: GraphStore, kb: CodeGraphKB) -> dict[str, Any]:
+    repo_root = str(kb.config.repo_path.resolve())
+    rows = store._conn.execute(
+        "SELECT f.path AS path, COUNT(s.id) AS symbol_count "
+        "FROM files f LEFT JOIN symbols s ON s.file_id = f.id "
+        "GROUP BY f.path ORDER BY f.path"
+    ).fetchall()
+
+    root: dict[str, Any] = {
+        "name": Path(repo_root).name or repo_root,
+        "type": "folder",
+        "path": "",
+        "children": [],
+        "file_count": 0,
+        "symbol_count": 0,
+    }
+    folder_index: dict[str, dict[str, Any]] = {"": root}
+
+    def ensure_folder(path: str) -> dict[str, Any]:
+        if path in folder_index:
+            return folder_index[path]
+        parent_path = "/".join(path.split("/")[:-1]) if "/" in path else ""
+        parent = ensure_folder(parent_path)
+        folder = {
+            "name": path.split("/")[-1],
+            "type": "folder",
+            "path": path,
+            "children": [],
+            "file_count": 0,
+            "symbol_count": 0,
+        }
+        parent["children"].append(folder)
+        folder_index[path] = folder
+        return folder
+
+    for row in rows:
+        raw_path = str(row["path"]).replace("\\", "/")
+        symbol_count = int(row["symbol_count"] or 0)
+        parts = [p for p in raw_path.split("/") if p]
+        parent_path = ""
+        if len(parts) > 1:
+            for part in parts[:-1]:
+                parent_path = f"{parent_path}/{part}" if parent_path else part
+                ensure_folder(parent_path)
+        parent = ensure_folder(parent_path)
+        parent["children"].append(
+            {
+                "name": parts[-1] if parts else raw_path,
+                "type": "file",
+                "path": raw_path,
+                "symbol_count": symbol_count,
+            }
+        )
+        root["file_count"] += 1
+        root["symbol_count"] += symbol_count
+
+    def finalize(node: dict[str, Any]) -> tuple[int, int]:
+        if node.get("type") == "file":
+            return 1, int(node.get("symbol_count", 0))
+        files = 0
+        symbols = 0
+        children = node.get("children", [])
+        for child in children:
+            child_files, child_symbols = finalize(child)
+            files += child_files
+            symbols += child_symbols
+        node["file_count"] = files
+        node["symbol_count"] = symbols
+        children.sort(key=lambda c: (c.get("type") != "folder", c.get("name", "")))
+        return files, symbols
+
+    finalize(root)
+    return root
 
 
 def _fallback_html() -> str:

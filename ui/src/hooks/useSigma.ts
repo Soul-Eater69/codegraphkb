@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import EdgeCurveProgram from "@sigma/edge-curve";
 import Sigma from "sigma";
 import type { CameraState } from "sigma/types";
 import type { SigmaEdgeAttributes, SigmaGraph, SigmaNodeAttributes } from "../graph/adapter";
@@ -48,13 +49,18 @@ export function useSigma(graph: SigmaGraph | null, options: UseSigmaOptions) {
       layoutRef.current = null;
     }
 
-    const sigma = new Sigma(graph, container, {
+    const sigma = new Sigma<SigmaNodeAttributes, SigmaEdgeAttributes>(graph, container, {
       renderEdgeLabels: false,
-      labelDensity: 0.06,
+      labelDensity: 0.055,
       labelRenderedSizeThreshold: 8,
       defaultNodeType: "circle",
-      defaultEdgeType: "line",
+      defaultEdgeType: "curved",
+      edgeProgramClasses: {
+        curved: EdgeCurveProgram as any,
+      },
+      enableEdgeEvents: true,
       zIndex: true,
+      hideLabelsOnMove: true,
     });
     sigmaRef.current = sigma;
 
@@ -131,18 +137,17 @@ export function useSigma(graph: SigmaGraph | null, options: UseSigmaOptions) {
       if (selectedNodeId) {
         const related = neighbors.has(node);
         if (!related) {
-          reduced.color = dimColor(data.color, 0.12);
-          reduced.label = labelsEnabled ? data.label : "";
+          reduced.color = dimColor(data.color, 0.08);
         } else {
-          reduced.zIndex = node === selectedNodeId ? 40 : 20;
-          reduced.size = node === selectedNodeId ? data.size * 1.8 : data.size * 1.25;
+          reduced.zIndex = node === selectedNodeId ? 48 : 30;
+          reduced.size = node === selectedNodeId ? data.size * 2.0 : data.size * 1.25;
         }
       }
 
       if (highlightedNodeIds.has(node)) {
         reduced.color = "#22d3ee";
-        reduced.size = Math.max(reduced.size, data.size * 1.6);
-        reduced.zIndex = 50;
+        reduced.size = Math.max(reduced.size, data.size * 1.7);
+        reduced.zIndex = 52;
       }
 
       if (!labelsEnabled) {
@@ -166,16 +171,16 @@ export function useSigma(graph: SigmaGraph | null, options: UseSigmaOptions) {
       if (selectedNodeId) {
         const related = source === selectedNodeId || target === selectedNodeId;
         if (!related) {
-          reduced.color = dimColor(data.color, 0.1);
-          reduced.size = Math.max(0.3, data.size * 0.5);
+          reduced.color = dimColor(data.color, 0.08);
+          reduced.size = Math.max(0.3, data.size * 0.42);
         } else {
-          reduced.size = data.size * 1.8;
-          reduced.zIndex = 25;
+          reduced.size = data.size * 2.1;
+          reduced.zIndex = 35;
         }
       }
 
       if (selectedEdgeId && edge === selectedEdgeId) {
-        reduced.size = data.size * 2.4;
+        reduced.size = data.size * 2.6;
         reduced.color = "#f8fafc";
         reduced.zIndex = 60;
       }
@@ -200,8 +205,8 @@ export function useSigma(graph: SigmaGraph | null, options: UseSigmaOptions) {
     }
     const attrs = graph.getNodeAttributes(selectedNodeId);
     sigmaRef.current.getCamera().animate(
-      { x: attrs.x, y: attrs.y, ratio: 0.25 },
-      { duration: 450 },
+      { x: attrs.x, y: attrs.y, ratio: 0.24 },
+      { duration: 420 },
     );
   }, [graph, selectedNodeId]);
 
@@ -212,14 +217,14 @@ export function useSigma(graph: SigmaGraph | null, options: UseSigmaOptions) {
         if (!camera) {
           return;
         }
-        camera.animate({ ratio: camera.getState().ratio * 0.75 }, { duration: 220 });
+        camera.animate({ ratio: camera.getState().ratio * 0.78 }, { duration: 210 });
       },
       zoomOut() {
         const camera = sigmaRef.current?.getCamera();
         if (!camera) {
           return;
         }
-        camera.animate({ ratio: camera.getState().ratio * 1.25 }, { duration: 220 });
+        camera.animate({ ratio: camera.getState().ratio * 1.28 }, { duration: 210 });
       },
       fit() {
         if (!graph || !sigmaRef.current) {
@@ -247,7 +252,7 @@ export function useSigma(graph: SigmaGraph | null, options: UseSigmaOptions) {
           y: minY + (maxY - minY) / 2,
           ratio: Math.max(0.03, span / 900),
         };
-        camera.animate(next, { duration: 350 });
+        camera.animate(next, { duration: 340 });
       },
       resetLayout() {
         if (!graph) {

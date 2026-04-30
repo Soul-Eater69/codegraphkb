@@ -6,11 +6,9 @@ export function AskPanel({ onOpen }: AskPanelProps) {
   return (
     <div className="ask-panel">
       <h3>Ask CodeGraphKB</h3>
-      <p className="muted">
-        Context generation from graph selections arrives in UI-3/UI-5. This button keeps the workflow visible now.
-      </p>
+      <p className="muted">Generate a context pack from current selection and use it for edits, review, or impact checks.</p>
       <button type="button" onClick={onOpen}>
-        Open Ask Placeholder
+        Open Context Preview
       </button>
     </div>
   );

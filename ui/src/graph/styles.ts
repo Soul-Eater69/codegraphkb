@@ -38,10 +38,10 @@ export const NODE_SIZES: Record<string, number> = {
 };
 
 export const EDGE_COLORS: Record<string, string> = {
-  CONTAINS: "#475569",
+  CONTAINS: "#64748b",
   DEFINES: "#0891b2",
-  IMPORTS: "#2563eb",
-  CALLS: "#7c3aed",
+  IMPORTS: "#3b82f6",
+  CALLS: "#8b5cf6",
   ACCESSES: "#38bdf8",
   HANDLES_ROUTE: "#ec4899",
   ROUTE_HANDLED_BY: "#ec4899",
@@ -56,6 +56,14 @@ export const EDGE_COLORS: Record<string, string> = {
   EXTENDS: "#fb923c",
   IMPLEMENTS: "#f59e0b",
   UNKNOWN: "#64748b",
+};
+
+const KIND_LABELS: Record<string, string> = {
+  test_block: "Test Block",
+  type_alias: "Type Alias",
+  api_consumer: "API Consumer",
+  orm_model: "ORM Model",
+  database_table: "Table",
 };
 
 export function nodeColor(kind: string): string {
@@ -74,10 +82,17 @@ export function dimColor(hex: string, alpha = 0.18): string {
   if (!hex.startsWith("#") || (hex.length !== 7 && hex.length !== 4)) {
     return hex;
   }
-  const full = hex.length === 4
-    ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`
-    : hex;
+  const full =
+    hex.length === 4
+      ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`
+      : hex;
   const a = Math.max(0, Math.min(1, alpha));
-  const suffix = Math.round(a * 255).toString(16).padStart(2, "0");
+  const suffix = Math.round(a * 255)
+    .toString(16)
+    .padStart(2, "0");
   return `${full}${suffix}`;
+}
+
+export function formatKindLabel(kind: string): string {
+  return KIND_LABELS[kind] ?? kind.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 }

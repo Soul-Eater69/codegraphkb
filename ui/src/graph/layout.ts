@@ -1,4 +1,5 @@
 import forceAtlas2 from "graphology-layout-forceatlas2";
+import FA2LayoutSupervisor from "graphology-layout-forceatlas2/worker";
 import noverlap from "graphology-layout-noverlap";
 import type { SigmaGraph } from "./adapter";
 
@@ -23,7 +24,7 @@ export function layoutStateFor(graph: SigmaGraph): LayoutState {
   if (n <= 3000) {
     return { recommendedMs: 18000, isLarge: false };
   }
-  return { recommendedMs: 8000, isLarge: true };
+  return { recommendedMs: 7000, isLarge: true };
 }
 
 export function createLayoutController(
@@ -31,28 +32,32 @@ export function createLayoutController(
   onRunning: (running: boolean) => void,
 ): LayoutController {
   let running = false;
-  let timer: number | null = null;
   let stopTimer: number | null = null;
 
-  const stepIterations = graph.order > 3000 ? 3 : graph.order > 500 ? 8 : 14;
   const settings = forceAtlas2.inferSettings(graph);
+  const worker = new FA2LayoutSupervisor(graph, {
+    settings: {
+      ...settings,
+      gravity: graph.order > 2500 ? 0.35 : 0.5,
+      slowDown: graph.order > 2500 ? 8 : 5.5,
+      scalingRatio: graph.order > 2500 ? 6 : 4.5,
+      barnesHutOptimize: true,
+    },
+  });
 
   const stop = () => {
     if (!running) {
       return;
     }
     running = false;
+    worker.stop();
     onRunning(false);
-    if (timer != null) {
-      window.clearInterval(timer);
-      timer = null;
-    }
     if (stopTimer != null) {
       window.clearTimeout(stopTimer);
       stopTimer = null;
     }
     try {
-      noverlap.assign(graph, { maxIterations: 140, settings: { ratio: 1.1 } });
+      noverlap.assign(graph, { maxIterations: 140, settings: { ratio: 1.12 } });
     } catch {
       // no-op
     }
@@ -64,19 +69,8 @@ export function createLayoutController(
     }
     running = true;
     onRunning(true);
-
+    worker.start();
     const { recommendedMs } = layoutStateFor(graph);
-    timer = window.setInterval(() => {
-      try {
-        forceAtlas2.assign(graph, {
-          iterations: stepIterations,
-          settings,
-        });
-      } catch {
-        stop();
-      }
-    }, 100);
-
     stopTimer = window.setTimeout(() => {
       stop();
     }, recommendedMs);
@@ -85,7 +79,7 @@ export function createLayoutController(
   return {
     start,
     stop,
-    toggle: () => {
+    toggle() {
       if (running) {
         stop();
       } else {
@@ -93,6 +87,9 @@ export function createLayoutController(
       }
     },
     isRunning: () => running,
-    cleanup: stop,
+    cleanup() {
+      stop();
+      worker.kill();
+    },
   };
 }
