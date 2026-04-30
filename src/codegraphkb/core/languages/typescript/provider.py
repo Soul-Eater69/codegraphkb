@@ -23,19 +23,22 @@ class TypeScriptLanguageProvider:
         return file_path.endswith(self.extensions)
 
     def parse_syntax(self, source_file: SourceFile) -> SyntaxParseResult:
-        _, choice = parse(source_file, backend=self.backend)
+        extraction, choice = parse(source_file, backend=self.backend)
         version = TREESITTER_JS_VERSION if choice.backend == "tree-sitter" else REGEX_JS_VERSION
         return SyntaxParseResult(
             language=source_file.language,
             backend=choice.backend,
             backend_version=str(version),
             source_file=source_file,
+            extraction=extraction,
         )
 
     def extract_symbols(self, source_file: SourceFile,
                         syntax: SyntaxParseResult) -> ExtractResult:
-        result, _ = parse(source_file, backend=self.backend)
-        return result
+        if syntax.extraction is not None:
+            return syntax.extraction
+        extraction, _ = parse(source_file, backend=self.backend)
+        return extraction
 
     def resolve_imports(self, ctx: ResolutionContext) -> list:
         return []

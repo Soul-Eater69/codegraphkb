@@ -156,7 +156,10 @@ class GraphStore:
         self._conn.execute("PRAGMA foreign_keys = ON")
         if is_new_db:
             self._conn.execute("PRAGMA journal_mode = WAL")
-            self._conn.executescript(SCHEMA)
+        # Always run base schema first; every statement is `IF NOT EXISTS`,
+        # so this is idempotent and also safe for partial / very old DBs that
+        # are missing tables migrations would otherwise try to ALTER.
+        self._conn.executescript(SCHEMA)
         from codegraphkb.core.migrations import migrate_schema
         migrate_schema(self._conn)
         self._conn.commit()
@@ -296,6 +299,22 @@ class GraphStore:
             if sr is not None:
                 yield sr
 
+    def symbols_by_kind(self, kind: str) -> list[SymbolRow]:
+        rows = self._conn.execute(
+            "SELECT s.*, f.path AS file_path FROM symbols s JOIN files f ON s.file_id = f.id "
+            "WHERE s.kind = ? ORDER BY s.qualified_name",
+            (kind,),
+        ).fetchall()
+        return [s for s in (_row_to_symbol(r) for r in rows) if s]
+
+    def symbol_qnames_in_file(self, file_path: str) -> list[str]:
+        rows = self._conn.execute(
+            "SELECT s.qualified_name FROM symbols s JOIN files f ON s.file_id = f.id "
+            "WHERE f.path = ?",
+            (file_path,),
+        ).fetchall()
+        return [r["qualified_name"] for r in rows]
+
     # ---------- edges ----------
     def delete_edges_from_symbols(self, qualified_names: Iterable[str]) -> None:
         qnames = list(qualified_names)
@@ -303,6 +322,20 @@ class GraphStore:
             return
         with self.transaction() as cx:
             cx.executemany("DELETE FROM edges WHERE src_qname=?", [(q,) for q in qnames])
+
+    def delete_edges_touching_symbols(self, qualified_names: Iterable[str]) -> None:
+        qnames = list(qualified_names)
+        if not qnames:
+            return
+        placeholders = ",".join("?" * len(qnames))
+        params = qnames + qnames
+        with self.transaction() as cx:
+            cx.execute(
+                f"DELETE FROM edges "
+                f"WHERE src_qname IN ({placeholders}) "
+                f"OR dst_qname IN ({placeholders})",
+                params,
+            )
 
     def insert_edges(self, edges: Iterable[tuple]) -> None:
         """Insert edge rows, accepting old 7-tuples or schema-v3 12-tuples."""

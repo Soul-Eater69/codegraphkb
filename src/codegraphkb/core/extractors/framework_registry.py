@@ -40,6 +40,8 @@ def _enrich_python(source: SourceFile, extract: ExtractResult) -> FrameworkExtra
 
 def _enrich_js_ts(source: SourceFile, extract: ExtractResult) -> FrameworkExtraction:
     from codegraphkb.core.extractors.js_ts.express import detect_express
+    from codegraphkb.core.extractors.js_ts.fastify import detect_fastify
+    from codegraphkb.core.extractors.js_ts.fetch_axios import detect_fetch_axios
     from codegraphkb.core.extractors.js_ts.nextjs import detect_nextjs
     from codegraphkb.core.extractors.js_ts.react_hooks import detect_react_hooks
     from codegraphkb.core.extractors.js_ts.jest_vitest import detect_jest_vitest
@@ -47,8 +49,9 @@ def _enrich_js_ts(source: SourceFile, extract: ExtractResult) -> FrameworkExtrac
     from codegraphkb.core.extractors.js_ts.envvar import detect_env_vars_js
 
     out = FrameworkExtraction()
-    for detect in (detect_express, detect_nextjs, detect_react_hooks,
-                   detect_jest_vitest, detect_prisma, detect_env_vars_js):
+    for detect in (detect_express, detect_fastify, detect_nextjs,
+                   detect_react_hooks, detect_jest_vitest, detect_prisma,
+                   detect_fetch_axios, detect_env_vars_js):
         partial = detect(source, extract)
         out.extra_symbols.extend(partial.extra_symbols)
         out.extra_edges.extend(partial.extra_edges)

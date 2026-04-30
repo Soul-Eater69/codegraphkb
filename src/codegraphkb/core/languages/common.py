@@ -21,6 +21,7 @@ class SyntaxParseResult:
     backend_version: str
     source_file: SourceFile
     tree: Any = None
+    extraction: ExtractResult | None = None
     diagnostics: list[dict] = field(default_factory=list)
 
 

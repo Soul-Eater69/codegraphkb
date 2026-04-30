@@ -16,10 +16,112 @@ from codegraphkb.core.parsers import ParserBackend, parse
 from codegraphkb.core.scanner import scan_repo
 from codegraphkb.core.store import GraphStore
 from codegraphkb.versioning import (
-    CAPSULE_VERSION, SCHEMA_VERSION, parser_signature,
+    CAPSULE_VERSION, SCHEMA_VERSION, actual_parser_signature, parser_signature,
 )
 
 _TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]+")
+_TS_LANG_NAMES = ("typescript", "javascript")
+
+
+def _resolve_semantic_selection(
+    semantic: str | list[str] | None,
+    languages_present: set[str],
+) -> set[str]:
+    if semantic is None or semantic == "" or semantic == "none":
+        return set()
+    if isinstance(semantic, str):
+        if semantic == "auto":
+            chosen: set[str] = set()
+            if languages_present & set(_TS_LANG_NAMES):
+                chosen.add("typescript")
+            return chosen
+        return {semantic}
+    return {item for item in semantic if item}
+
+
+def _run_semantic_pass(store, config, semantic, stats, progress) -> None:
+    languages = set(store.file_languages().keys())
+    selected = _resolve_semantic_selection(semantic, languages)
+    if not selected:
+        return
+    if "typescript" in selected and (languages & set(_TS_LANG_NAMES)):
+        _run_typescript_semantic_pass(store, config, stats, progress)
+
+
+def _run_process_pass(store, stats, progress) -> None:
+    from codegraphkb.core.processes import build_processes, replace_processes
+
+    if progress:
+        progress("building process maps")
+    processes = build_processes(store)
+    replace_processes(store, processes)
+    stats.processes_built = len(processes)
+    by_type: dict[str, int] = {}
+    for proc in processes:
+        by_type[proc.process_type] = by_type.get(proc.process_type, 0) + 1
+    stats.processes_by_type = by_type
+    store.set_meta("processes_built", str(len(processes)))
+    if progress and processes:
+        summary = ", ".join(f"{k}={v}" for k, v in by_type.items())
+        progress(f"processes: {summary}")
+
+
+def _run_typescript_semantic_pass(store, config, stats, progress) -> None:
+    from codegraphkb.core.semantic.adapter_runner import run_semantic_adapter
+    from codegraphkb.core.semantic.merge import merge_semantic_result
+    from codegraphkb.core.semantic.typescript_adapter import (
+        ADAPTER_VERSION,
+        TypeScriptSemanticAdapter,
+    )
+
+    adapter = TypeScriptSemanticAdapter()
+    repo_path = str(config.repo_path)
+    files: list[str] = []
+    for path in store.known_files():
+        row = store.get_file(path)
+        if row is not None and row.language in _TS_LANG_NAMES:
+            files.append(path)
+    if progress:
+        progress("running TypeScript semantic adapter")
+    run = run_semantic_adapter(adapter, repo_path, files)
+    backend_entry: dict = {
+        "adapter": adapter.id,
+        "language": adapter.language,
+        "available": run.available,
+        "warnings": list(run.warnings),
+        "edges_upgraded": 0,
+        "edges_inserted": 0,
+        "types_inserted": 0,
+        "symbols_enriched": 0,
+    }
+    if not run.available or run.result is None:
+        stats.semantic_backends["typescript"] = backend_entry
+        store.set_meta("semantic_typescript_available", "false")
+        store.set_meta(
+            "semantic_typescript_reason",
+            (run.warnings[0] if run.warnings else "unavailable"),
+        )
+        return
+    merge_stats = merge_semantic_result(
+        store, run.result, backend_version=run.result.adapter_version or ADAPTER_VERSION,
+    )
+    backend_entry.update({
+        "edges_upgraded": merge_stats.edges_upgraded,
+        "edges_inserted": merge_stats.edges_inserted,
+        "types_inserted": merge_stats.types_inserted,
+        "symbols_enriched": merge_stats.symbols_enriched,
+    })
+    stats.semantic_backends["typescript"] = backend_entry
+    store.set_meta("semantic_typescript_available", "true")
+    store.set_meta(
+        "semantic_typescript_version",
+        run.result.adapter_version or ADAPTER_VERSION,
+    )
+    if progress:
+        progress(
+            f"semantic merge: upgraded={merge_stats.edges_upgraded} "
+            f"inserted={merge_stats.edges_inserted}"
+        )
 
 
 @dataclass
@@ -32,16 +134,24 @@ class IndexStats:
     symbols: int = 0
     edges: int = 0
     parser_backends: dict[str, int] = None  # type: ignore[assignment]
+    semantic_backends: dict[str, dict] = None  # type: ignore[assignment]
+    processes_built: int = 0
+    processes_by_type: dict[str, int] = None  # type: ignore[assignment]
 
     def __post_init__(self):
         if self.parser_backends is None:
             self.parser_backends = {}
+        if self.semantic_backends is None:
+            self.semantic_backends = {}
+        if self.processes_by_type is None:
+            self.processes_by_type = {}
 
 
 def index_repository(config: IndexConfig, force: bool = False,
                      progress=None,
                      parser_backend: ParserBackend = ParserBackend.AUTO,
-                     embedder=None) -> IndexStats:
+                     embedder=None,
+                     semantic: str | list[str] | None = None) -> IndexStats:
     """Index a repo into the graph store.
 
     Re-indexes a file when:
@@ -82,6 +192,9 @@ def index_repository(config: IndexConfig, force: bool = False,
                 stats.files_reparsed_for_version += 1
             if progress:
                 progress(f"indexing {src.rel_path}")
+            # Capture old symbol qnames before upsert deletes them (cascade),
+            # so we can purge edges that touch removed symbols afterwards.
+            old_qnames = store.symbol_qnames_in_file(src.rel_path)
             file_id = store.upsert_file(
                 path=src.rel_path,
                 language=src.language,
@@ -92,8 +205,22 @@ def index_repository(config: IndexConfig, force: bool = False,
             )
             extract, choice = providers.parse_and_extract(src)
             stats.parser_backends[choice.parser_backend] = stats.parser_backends.get(choice.parser_backend, 0) + 1
+            actual_sig = actual_parser_signature(
+                src.language, choice.parser_backend, choice.parser_version,
+            )
             store.set_meta(f"file_provider:{src.rel_path}", choice.provider_id)
+            # `file_parser` carries the actual signature that ran, so it stays
+            # comparable against `target_parser_sig` for cache invalidation.
             store.set_meta(f"file_parser:{src.rel_path}", target_parser_sig)
+            store.set_meta(f"file_parser_preferred:{src.rel_path}", choice.preferred_backend)
+            store.set_meta(f"file_parser_actual:{src.rel_path}", choice.parser_backend)
+            store.set_meta(f"file_parser_signature:{src.rel_path}", actual_sig)
+            store.set_meta(
+                f"file_parser_fallback:{src.rel_path}",
+                "true" if choice.fallback_used else "false",
+            )
+            if choice.warning:
+                store.set_meta(f"file_parser_warning:{src.rel_path}", choice.warning)
 
             # PR 14 — framework-aware enrichment.
             framework_out = enrich_extraction(src, extract)
@@ -142,7 +269,14 @@ def index_repository(config: IndexConfig, force: bool = False,
                 symbol_qnames.append(sym.qualified_name)
                 new_or_updated_symbol_ids.append(sym_id)
 
-            # Replace edges keyed by these source symbol qnames
+            # Stale-edge cleanup: remove every edge that touches an old symbol
+            # of this file (incoming or outgoing) so edges from removed/renamed
+            # symbols don't survive the reindex. Also covers the new-qnames set
+            # for clean replacement.
+            new_qnames_set = set(symbol_qnames)
+            stale_qnames = [q for q in old_qnames if q not in new_qnames_set]
+            if stale_qnames:
+                store.delete_edges_touching_symbols(stale_qnames)
             store.delete_edges_from_symbols(symbol_qnames)
             edge_rows = []
             for edge in extract.edges:
@@ -185,6 +319,9 @@ def index_repository(config: IndexConfig, force: bool = False,
 
         # Remove files no longer present in the repo
         for stale in previously_known - seen_paths:
+            stale_qnames = store.symbol_qnames_in_file(stale)
+            if stale_qnames:
+                store.delete_edges_touching_symbols(stale_qnames)
             store.delete_file(stale)
             stats.files_removed += 1
             if progress:
@@ -192,6 +329,13 @@ def index_repository(config: IndexConfig, force: bool = False,
 
         # Resolve edge targets where unambiguous
         store.resolve_edge_targets()
+
+        # Phase 3.1 — semantic enrichment pass.
+        _run_semantic_pass(store, config, semantic, stats, progress)
+
+        # Phase 3.3 — process map build.
+        _run_process_pass(store, stats, progress)
+
         store.set_meta("last_indexed_at", now)
         store.set_meta("repo_path", str(config.repo_path))
 

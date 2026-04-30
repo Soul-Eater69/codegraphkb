@@ -29,6 +29,7 @@ def collect_run_environment(repo_path: str | Path) -> dict[str, Any]:
 
 
 def collect_doctor_report(kb) -> dict[str, Any]:
+    from codegraphkb.core.languages import LanguageProviderRegistry
     from codegraphkb.core.parsers import ParserBackend
 
     store = kb._open_store()
@@ -40,6 +41,8 @@ def collect_doctor_report(kb) -> dict[str, Any]:
             backend = ParserBackend.AUTO
 
         stale: list[str] = []
+        backend_counts: dict[str, int] = {}
+        fallback_files: list[dict[str, str]] = []
         for path in sorted(store.known_files()):
             file = store.get_file(path)
             if file is None:
@@ -48,11 +51,31 @@ def collect_doctor_report(kb) -> dict[str, Any]:
             actual = store.get_meta(f"file_parser:{path}")
             if actual != target:
                 stale.append(path)
+            actual_backend = store.get_meta(f"file_parser_actual:{path}") or ""
+            if actual_backend:
+                backend_counts[actual_backend] = backend_counts.get(actual_backend, 0) + 1
+            if (store.get_meta(f"file_parser_fallback:{path}") or "false") == "true":
+                fallback_files.append({
+                    "path": path,
+                    "preferred": store.get_meta(f"file_parser_preferred:{path}") or "",
+                    "actual": actual_backend,
+                    "warning": store.get_meta(f"file_parser_warning:{path}") or "",
+                })
+
+        provider_status = LanguageProviderRegistry.default(parser_backend=backend).diagnostics()
+        ts_probe = _typescript_semantic_probe(str(kb.config.repo_path))
+        if "typescript" in provider_status:
+            provider_status["typescript"]["semantic_available"] = bool(ts_probe.get("available"))
+            if ts_probe.get("available"):
+                provider_status["typescript"]["status"] = "semantic"
 
         embedding_model = store.get_meta("embedding_model") or ""
         embedding_count = store.embedding_count()
         object_types = _object_type_counts(store)
         frameworks = _detected_frameworks(store)
+        edge_types = _edge_type_counts(store)
+        framework_object_counts = _framework_object_counts(object_types, edge_types)
+        process_counts = _process_counts(store)
         embedding_stub = embedding_model.startswith("hash-stub")
         embedding_provider = _embedding_provider(embedding_model)
         return {
@@ -73,18 +96,25 @@ def collect_doctor_report(kb) -> dict[str, Any]:
                 "typescript": parser_signature("typescript", backend),
             },
             "tree_sitter_available": is_treesitter_available(),
+            "parser_backend_counts": backend_counts,
+            "parser_fallback_count": len(fallback_files),
+            "parser_fallback_files": fallback_files[:25],
+            "providers": provider_status,
             "embedding_enabled": embedding_count > 0,
             "embedding_provider": embedding_provider,
             "embedding_model": embedding_model,
             "embedding_model_loaded": embedding_stub and embedding_count > 0,
             "embedding_stub_mode": embedding_stub,
             "embedding_load_state": _embedding_load_state(embedding_model, embedding_count),
-            "semantic_backends": _semantic_backends(),
+            "semantic_backends": _semantic_backends(str(kb.config.repo_path)),
             "embeddings": embedding_count,
             "indexed_file_count": store.file_count(),
             "symbol_count": store.symbol_count(),
             "edge_count": store.edge_count(),
             "object_type_counts": object_types,
+            "edge_type_counts": edge_types,
+            "framework_object_counts": framework_object_counts,
+            "process_counts": process_counts,
             "frameworks": frameworks,
             "languages": store.file_languages(),
             "stale_files_for_parser": stale[:25],
@@ -119,6 +149,46 @@ def _object_type_counts(store) -> dict[str, int]:
     return {r["kind"]: int(r["n"]) for r in rows}
 
 
+def _edge_type_counts(store) -> dict[str, int]:
+    rows = store._conn.execute(
+        "SELECT edge_type, COUNT(*) AS n FROM edges GROUP BY edge_type"
+    ).fetchall()
+    return {r["edge_type"]: int(r["n"]) for r in rows}
+
+
+def _process_counts(store) -> dict[str, int]:
+    rows = store._conn.execute(
+        "SELECT process_type, COUNT(*) AS n FROM processes GROUP BY process_type"
+    ).fetchall()
+    counts = {r["process_type"]: int(r["n"]) for r in rows}
+    total = store._conn.execute("SELECT COUNT(*) AS n FROM processes").fetchone()
+    counts["total"] = int((total["n"] if total else 0))
+    return counts
+
+
+def _framework_object_counts(object_types: dict[str, int],
+                              edge_types: dict[str, int]) -> dict[str, int]:
+    """Friendly summary used by ``codegraph stats`` and the doctor report.
+
+    Aggregates per-framework concern counts so users can see at a glance how
+    many routes, tests, queries, and external fetches the index found.
+    """
+    return {
+        "routes": int(object_types.get("route", 0)),
+        "test_blocks": int(object_types.get("test_block", 0)),
+        "models": int(object_types.get("model", 0)),
+        "api_consumers": int(object_types.get("api_consumer", 0)),
+        "components": int(object_types.get("component", 0)),
+        "env_vars": int(object_types.get("env_var", 0)),
+        "handles_route_edges": int(edge_types.get("HANDLES_ROUTE", 0)),
+        "tests_edges": int(edge_types.get("TESTS", 0)),
+        "queries_edges": int(edge_types.get("QUERIES", 0)),
+        "fetches_edges": int(edge_types.get("FETCHES", 0)),
+        "calls_external_edges": int(edge_types.get("CALLS_EXTERNAL", 0)),
+        "uses_middleware_edges": int(edge_types.get("USES_MIDDLEWARE", 0)),
+    }
+
+
 def _detected_frameworks(store) -> dict[str, int]:
     rows = store._conn.execute(
         "SELECT key FROM meta WHERE key LIKE 'framework:%'"
@@ -151,16 +221,43 @@ def _embedding_load_state(model: str, count: int) -> str:
     return "real-indexed-unverified"
 
 
-def _semantic_backends() -> dict[str, dict]:
-    # Foundation PR: adapters are optional and not auto-installed. Later PRs
-    # should replace these checks with concrete adapter probes.
+def _semantic_backends(repo_path: str | None = None) -> dict[str, dict]:
+    # TypeScript adapter is probed for real (Phase 3.1); other languages remain
+    # placeholders until their adapters land.
+    ts_entry = _typescript_semantic_probe(repo_path)
     return {
-        "typescript": {"adapter": "typescript-compiler-api", "available": False},
+        "typescript": ts_entry,
         "python": {"adapter": "pyright/basedpyright", "available": False},
         "go": {"adapter": "go/packages", "available": False},
         "java": {"adapter": "jdt", "available": False},
         "csharp": {"adapter": "roslyn", "available": False},
     }
+
+
+def _typescript_semantic_probe(repo_path: str | None) -> dict:
+    from codegraphkb.core.semantic.typescript_adapter import (
+        ADAPTER_VERSION,
+        TypeScriptSemanticAdapter,
+        find_helper,
+    )
+
+    adapter = TypeScriptSemanticAdapter()
+    location = find_helper(repo_path)
+    node_ok = adapter.node_available()
+    available = node_ok and location.built
+    entry: dict[str, Any] = {
+        "adapter": "typescript-compiler-api",
+        "available": available,
+        "helper_path": str(location.helper_path),
+        "version": ADAPTER_VERSION,
+        "node_available": node_ok,
+    }
+    if not available:
+        if not node_ok:
+            entry["reason"] = "node executable not found on PATH"
+        else:
+            entry["reason"] = location.reason
+    return entry
 
 
 def _git(repo: Path, *args: str) -> str | None:

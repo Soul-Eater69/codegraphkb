@@ -95,6 +95,7 @@ class EditContextPack:
     risks: list[RiskItem] = field(default_factory=list)
     validation_commands: list[ValidationCommand] = field(default_factory=list)
     context_pack: list[dict] = field(default_factory=list)
+    process_traces: list[dict] = field(default_factory=list)
     audit: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 
@@ -114,6 +115,7 @@ class EditContextPack:
             "risks": _list(self.risks),
             "validation_commands": _list(self.validation_commands),
             "context_pack": self.context_pack,
+            "process_traces": self.process_traces,
             "audit": self.audit,
             "warnings": self.warnings,
         }
@@ -174,6 +176,7 @@ def prepare_edit_context(
     out.related_tests = classification["tests"]
     out.symbols_to_modify = classification["symbols_to_modify"]
     out.context_pack = _serialize_pack_items(pack.items)
+    out.process_traces = _gather_process_traces(kb, classification, pack)
     timing["context_assembly"] += _elapsed_ms(started)
 
     # Callers/callees for the top symbols-to-modify (PR 18 input)
@@ -211,6 +214,43 @@ def prepare_edit_context(
     if not classification["tests"]:
         out.warnings.append("No related tests detected — coverage may be missing.")
     return out
+
+
+# ---------- process trace integration ----------
+
+def _gather_process_traces(kb, classification: dict, pack) -> list[dict]:
+    """Phase 3.3 — pull process maps relevant to the candidate symbols.
+
+    We collect symbols from ``symbols_to_modify`` plus the top-ranked context
+    items, then look up process traces touching any of those symbols. Traces
+    are deduped by id and ranked by confidence, capped at five.
+    """
+    qnames: list[str] = []
+    seen: set[str] = set()
+    for sym in classification.get("symbols_to_modify", []):
+        if sym.symbol and sym.symbol not in seen:
+            seen.add(sym.symbol)
+            qnames.append(sym.symbol)
+    for item in (pack.items or [])[:8]:
+        title = getattr(item, "title", "") or ""
+        if title and title not in seen:
+            seen.add(title)
+            qnames.append(title)
+    if not qnames:
+        return []
+
+    traces_by_id: dict[str, dict] = {}
+    for qname in qnames:
+        try:
+            matches = kb.find_processes_for_symbol(qname, limit=3)
+        except Exception:
+            continue
+        for proc in matches:
+            if proc and proc["id"] not in traces_by_id:
+                traces_by_id[proc["id"]] = proc
+    ranked = sorted(traces_by_id.values(),
+                    key=lambda p: p.get("confidence", 0.0), reverse=True)
+    return ranked[:5]
 
 
 # ---------- classification ----------

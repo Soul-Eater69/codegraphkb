@@ -28,3 +28,15 @@ def parser_signature(language: str, backend: ParserBackend) -> str:
             return f"jsts:tree-sitter:{TREESITTER_JS_VERSION}"
         return f"jsts:auto:rt{REGEX_JS_VERSION}-ts{TREESITTER_JS_VERSION}"
     return f"{language}:none:1"
+
+
+def actual_parser_signature(language: str, actual_backend: str, version: str | int) -> str:
+    """Signature describing the *actual* parser that ran (not the preference).
+
+    ``actual_backend`` is the concrete backend name produced by the parser
+    registry (e.g. ``"ast"``, ``"tree-sitter"``, ``"regex"``).
+    """
+    base_lang = language
+    if language in ("javascript", "typescript"):
+        base_lang = language
+    return f"{base_lang}:{actual_backend}:{version}"

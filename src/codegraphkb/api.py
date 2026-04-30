@@ -48,12 +48,16 @@ class CodeGraphKB:
     def index(self, force: bool = False, progress=None,
               parser: ParserBackend | str = ParserBackend.AUTO,
               embed: bool = False,
-              embedder=None) -> IndexStats:
+              embedder=None,
+              semantic: str | None = None) -> IndexStats:
         """(Re)build the graph for the repo. Re-indexes only changed files unless `force=True`.
 
         parser: "auto" (default), "tree-sitter", or "regex".
         embed:  if True (and an embedder is available), also write capsule embeddings.
         embedder: optional pre-built embedder object; takes precedence over `embed`.
+        semantic: ``None``/``"none"`` (default) skips semantic adapters.
+                  ``"auto"`` runs every available adapter for languages present
+                  in the index. ``"typescript"`` runs only that adapter.
         """
         backend = self._coerce_backend(parser)
         active_embedder = embedder
@@ -64,7 +68,8 @@ class CodeGraphKB:
         elif embedder is not None:
             self._embedder = embedder
         stats = index_repository(self.config, force=force, progress=progress,
-                                 parser_backend=backend, embedder=active_embedder)
+                                 parser_backend=backend, embedder=active_embedder,
+                                 semantic=semantic)
         self.write_report()
         return stats
 
@@ -245,6 +250,26 @@ class CodeGraphKB:
         finally:
             store.close()
 
+    def framework_object_counts(self) -> dict[str, int]:
+        """Phase 3.2 — counts of framework-level objects/edges.
+
+        Aggregates routes / test_blocks / models / api_consumers symbol counts
+        and HANDLES_ROUTE / TESTS / QUERIES / FETCHES edge counts so callers
+        can sanity-check what the framework extractors produced.
+        """
+        from codegraphkb.diagnostics import (
+            _edge_type_counts,
+            _framework_object_counts,
+            _object_type_counts,
+        )
+        store = self._open_store()
+        try:
+            return _framework_object_counts(
+                _object_type_counts(store), _edge_type_counts(store),
+            )
+        finally:
+            store.close()
+
     def detected_frameworks(self) -> dict[str, int]:
         """PR 14 — count files per detected framework (from indexer meta keys)."""
         store = self._open_store()
@@ -261,6 +286,70 @@ class CodeGraphKB:
                 fw = parts[2]
                 counts[fw] = counts.get(fw, 0) + 1
         return counts
+
+    # ---------- processes (Phase 3.3) ----------
+    def list_processes(self, *, process_type: str | None = None,
+                        limit: int | None = None) -> list[dict]:
+        from codegraphkb.core.processes import list_processes as _list
+        store = self._open_store()
+        try:
+            return _list(store, process_type=process_type, limit=limit)
+        finally:
+            store.close()
+
+    def get_process(self, process_id: str) -> dict | None:
+        from codegraphkb.core.processes import get_process as _get
+        store = self._open_store()
+        try:
+            return _get(store, process_id)
+        finally:
+            store.close()
+
+    def find_processes_for_symbol(self, qname: str, *, limit: int = 10) -> list[dict]:
+        from codegraphkb.core.processes import find_processes_for_symbol as _find
+        store = self._open_store()
+        try:
+            return _find(store, qname, limit=limit)
+        finally:
+            store.close()
+
+    # ---------- exporters (Phase 3.4) ----------
+    def export_graph(self, *, view: str = "full") -> dict:
+        from codegraphkb.core.exporters import export_graph as _export_graph
+
+        store = self._open_store()
+        try:
+            return _export_graph(store, view=view, repo_path=str(self.config.repo_path))
+        finally:
+            store.close()
+
+    def export_graph_html(self, *, view: str = "full", out: Path) -> Path:
+        from codegraphkb.core.exporters import render_graph_html
+
+        payload = self.export_graph(view=view)
+        return render_graph_html(payload, out=out, default_view=view)
+
+    def export_processes(self) -> dict:
+        from codegraphkb.core.exporters import export_processes as _export_processes
+
+        store = self._open_store()
+        try:
+            return _export_processes(store, repo_path=str(self.config.repo_path))
+        finally:
+            store.close()
+
+    def export_impact_graph(self, target: str) -> dict:
+        from codegraphkb.core.exporters import export_impact_graph as _export_impact_graph
+
+        store = self._open_store()
+        try:
+            return _export_impact_graph(
+                store,
+                target,
+                repo_path=str(self.config.repo_path),
+            )
+        finally:
+            store.close()
 
     def find_symbol(self, name: str) -> list[SymbolRow]:
         store = self._open_store()

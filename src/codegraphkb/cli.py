@@ -56,14 +56,20 @@ def init_cmd(repo: str) -> None:
 @click.option("--embed", is_flag=True,
               help="Embed symbol capsules. Requires `codegraphkb[embeddings]` for real models; "
                    "falls back to a hash-based stub embedder otherwise.")
+@click.option("--semantic", "semantic_choice",
+              type=click.Choice(["none", "auto", "typescript"]),
+              default="none", show_default=True,
+              help="Run a language semantic adapter after the syntax pass to "
+                   "enrich CALLS/types. Requires the helper to be built.")
 def index_cmd(repo: str, force: bool, force_parser_refresh: bool, quiet: bool,
-              parser_choice: str, embed: bool) -> None:
+              parser_choice: str, embed: bool, semantic_choice: str) -> None:
     kb = CodeGraphKB(repo)
     progress = None if quiet else (lambda msg: click.echo(f"  · {msg}", err=True))
     # `--force-parser-refresh` is a softer rebuild than `--force`: just bumps parser sigs.
     effective_force = force or force_parser_refresh
     stats = kb.index(force=effective_force, progress=progress,
-                     parser=parser_choice, embed=embed)
+                     parser=parser_choice, embed=embed,
+                     semantic=None if semantic_choice == "none" else semantic_choice)
     click.echo()
     click.echo(click.style("CodeGraphKB index complete", bold=True, fg="green"))
     click.echo(f"  Repo:        {kb.config.repo_path}")
@@ -85,6 +91,20 @@ def index_cmd(repo: str, force: bool, force_parser_refresh: bool, quiet: bool,
         if embedded_keys:
             n = stats.parser_backends[embedded_keys[0]]
             click.echo(f"  Embedded:    {n} symbol capsules")
+    if stats.semantic_backends:
+        for lang, info in stats.semantic_backends.items():
+            status = "ok" if info.get("available") else "unavailable"
+            click.echo(
+                f"  Semantic[{lang}]: {status}  "
+                f"upgraded={info.get('edges_upgraded', 0)} "
+                f"inserted={info.get('edges_inserted', 0)} "
+                f"types={info.get('types_inserted', 0)}"
+            )
+            for warn in info.get("warnings", []) or []:
+                click.echo(click.style(f"        ! {warn}", fg="yellow"))
+    if stats.processes_built:
+        by_type = ", ".join(f"{k}={v}" for k, v in stats.processes_by_type.items())
+        click.echo(f"  Processes:   {stats.processes_built}  ({by_type})")
     click.echo(f"  Report:      {kb.config.report_path}")
 
 
@@ -135,6 +155,7 @@ def stats_cmd(repo: str, as_json: bool, object_types: bool) -> None:
     if object_types:
         s["object_types"] = kb.object_type_counts()
         s["frameworks"] = kb.detected_frameworks()
+        s["framework_objects"] = kb.framework_object_counts()
     if as_json:
         click.echo(json.dumps(s, indent=2))
         return
@@ -157,6 +178,12 @@ def stats_cmd(repo: str, as_json: bool, object_types: bool) -> None:
             click.echo(click.style("Detected frameworks", bold=True))
             for fw, n in sorted(s["frameworks"].items(), key=lambda kv: kv[1], reverse=True):
                 click.echo(f"  {fw:<20} {n} files")
+        if s.get("framework_objects"):
+            click.echo()
+            click.echo(click.style("Framework objects", bold=True))
+            for label, n in s["framework_objects"].items():
+                if n:
+                    click.echo(f"  {label:<24} {n}")
 
 
 # ---------- query ----------
@@ -427,6 +454,20 @@ def prepare_edit_cmd(task: str, repo: str, budget: int,
         click.echo(click.style("Suggested validation commands", bold=True))
         for vc in pack.validation_commands:
             click.echo(f"  {vc.confidence:.2f}  {vc.command:<40}  ({vc.type}) — {vc.reason}")
+    if pack.process_traces:
+        click.echo()
+        click.echo(click.style("Process traces", bold=True))
+        for trace in pack.process_traces:
+            click.echo(
+                f"  {trace.get('confidence', 0):.2f}  "
+                f"[{trace.get('process_type', '?')}]  {trace.get('label', '')}"
+            )
+            for step in (trace.get("steps") or [])[:6]:
+                edge = (step.get("metadata") or {}).get("edge_type", "?")
+                click.echo(
+                    f"        {step['step']}. {step['src_qname']}  "
+                    f"--{edge}-->  {step['dst_qname']}"
+                )
 
 
 @cli.command("tests", help="Find tests related to a file, symbol, or task.")
@@ -588,6 +629,158 @@ def regression_report_cmd(repo: str, eval_dataset: str | None,
             click.echo(f"  markdown:      {save_markdown}")
     if fail_on_hard_regression and not report.passed:
         sys.exit(1)
+
+
+# ---------- processes (Phase 3.3) ----------
+@cli.group("process", help="Inspect process maps built from the indexed graph.")
+def process_group() -> None:
+    pass
+
+
+@process_group.command("list", help="List discovered processes.")
+@click.option("--repo", "repo", type=click.Path(file_okay=False, exists=True), default=".")
+@click.option("--type", "process_type", type=str, default=None,
+              help="Filter by process type (api_flow, ui_to_api_flow, test_flow).")
+@click.option("--limit", type=int, default=50, show_default=True)
+@click.option("--json", "as_json", is_flag=True)
+def process_list_cmd(repo: str, process_type: str | None,
+                     limit: int, as_json: bool) -> None:
+    kb = CodeGraphKB(repo)
+    procs = kb.list_processes(process_type=process_type, limit=limit)
+    if as_json:
+        click.echo(json.dumps(procs, indent=2))
+        return
+    if not procs:
+        click.echo("No processes found. Re-run `codegraph index <repo>`.")
+        return
+    click.echo(click.style(f"Processes ({len(procs)})", bold=True))
+    click.echo(f"{'type':<18} {'conf':>5} {'steps':>6}  label")
+    for p in procs:
+        click.echo(
+            f"{p['process_type']:<18} {p['confidence']:>5.2f} "
+            f"{p['step_count']:>6}  {p['label']}  ({p['id']})"
+        )
+
+
+@process_group.command("show", help="Render the ordered steps of a process.")
+@click.argument("process_id")
+@click.option("--repo", "repo", type=click.Path(file_okay=False, exists=True), default=".")
+@click.option("--json", "as_json", is_flag=True)
+def process_show_cmd(process_id: str, repo: str, as_json: bool) -> None:
+    kb = CodeGraphKB(repo)
+    proc = kb.get_process(process_id)
+    if proc is None:
+        # Try a relaxed lookup by label/entrypoint substring.
+        all_procs = kb.list_processes()
+        matches = [
+            p for p in all_procs
+            if process_id in p["id"] or process_id in p.get("label", "")
+            or process_id in p.get("entrypoint_id", "")
+        ]
+        if matches:
+            proc = kb.get_process(matches[0]["id"])
+    if proc is None:
+        click.echo(f"No process matched `{process_id}`.")
+        sys.exit(1)
+    if as_json:
+        click.echo(json.dumps(proc, indent=2))
+        return
+    click.echo(click.style(f"{proc['label']}", bold=True))
+    click.echo(f"  type:        {proc['process_type']}")
+    click.echo(f"  id:          {proc['id']}")
+    click.echo(f"  confidence:  {proc['confidence']:.2f}")
+    click.echo(f"  entrypoint:  {proc['entrypoint_id']}")
+    click.echo(f"  terminal:    {proc['terminal_id']}")
+    click.echo(f"  steps ({proc['step_count']}):")
+    for step in proc.get("steps", []):
+        edge = step["metadata"].get("edge_type", "?")
+        click.echo(
+            f"    {step['step']:>2}. {step['src_qname']}  "
+            f"--{edge}-->  {step['dst_qname']}  "
+            f"({step['confidence']:.2f})"
+        )
+
+
+# ---------- exporters (Phase 3.4) ----------
+@cli.group("export", help="Export graph/process/impact views as JSON or static HTML.")
+def export_group() -> None:
+    pass
+
+
+@export_group.command("graph", help="Export the graph as JSON or static HTML.")
+@click.option("--repo", "repo", type=click.Path(file_okay=False, exists=True), default=".")
+@click.option("--format", "fmt", type=click.Choice(["json", "html"]),
+              default="json", show_default=True)
+@click.option("--view", type=click.Choice(
+    ["full", "repo", "symbols", "calls", "processes", "framework"]),
+    default="full", show_default=True)
+@click.option("--out", type=click.Path(dir_okay=False), required=True)
+def export_graph_cmd(repo: str, fmt: str, view: str, out: str) -> None:
+    from codegraphkb.core.exporters import VIEWS, render_graph_html
+
+    kb = CodeGraphKB(repo)
+    out_path = Path(out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if fmt == "json":
+        payload = kb.export_graph(view=view)
+        out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    else:
+        views = {v: kb.export_graph(view=v) for v in VIEWS}
+        render_graph_html(
+            views[view],
+            out=out_path,
+            title="CodeGraphKB Graph",
+            views=views,
+            default_view=view,
+        )
+    click.echo(str(out_path))
+
+
+@export_group.command("process", help="Export process maps as JSON or static HTML.")
+@click.option("--repo", "repo", type=click.Path(file_okay=False, exists=True), default=".")
+@click.option("--format", "fmt", type=click.Choice(["json", "html"]),
+              default="json", show_default=True)
+@click.option("--out", type=click.Path(dir_okay=False), required=True)
+def export_process_cmd(repo: str, fmt: str, out: str) -> None:
+    from codegraphkb.core.exporters import render_graph_html
+
+    kb = CodeGraphKB(repo)
+    out_path = Path(out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = kb.export_processes()
+
+    if fmt == "json":
+        out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    else:
+        graph = {
+            "metadata": payload["metadata"],
+            "nodes": payload["nodes"],
+            "edges": payload["edges"],
+        }
+        render_graph_html(graph, out=out_path, title="CodeGraphKB Processes")
+    click.echo(str(out_path))
+
+
+@export_group.command("impact", help="Export impact graph for a file/symbol target.")
+@click.argument("target")
+@click.option("--repo", "repo", type=click.Path(file_okay=False, exists=True), default=".")
+@click.option("--format", "fmt", type=click.Choice(["json", "html"]),
+              default="json", show_default=True)
+@click.option("--out", type=click.Path(dir_okay=False), required=True)
+def export_impact_cmd(target: str, repo: str, fmt: str, out: str) -> None:
+    from codegraphkb.core.exporters import render_graph_html
+
+    kb = CodeGraphKB(repo)
+    out_path = Path(out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = kb.export_impact_graph(target)
+
+    if fmt == "json":
+        out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    else:
+        render_graph_html(payload, out=out_path, title=f"CodeGraphKB Impact: {target}")
+    click.echo(str(out_path))
 
 
 # ---------- servers ----------

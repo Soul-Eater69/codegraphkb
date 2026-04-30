@@ -168,6 +168,24 @@ TOOLS = [
             "required": ["path"],
         },
     },
+    {
+        "name": "get_process_trace",
+        "description": (
+            "Return process maps (workflow traces) discovered in the index. "
+            "Filter by process_id, by symbol involvement, or by process_type "
+            "(api_flow, ui_to_api_flow, test_flow). Use this when you need to "
+            "understand the end-to-end workflow that touches a piece of code."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "process_id": {"type": "string"},
+                "symbol": {"type": "string"},
+                "process_type": {"type": "string"},
+                "limit": {"type": "integer", "default": 5},
+            },
+        },
+    },
 ]
 
 
@@ -237,6 +255,8 @@ def _handle_tool(kb: CodeGraphKB, req_id, params: dict[str, Any]) -> dict[str, A
             return _structured(req_id, _explain_selection(kb, args))
         elif name == "get_file_summary":
             text = _file_summary(kb, args)
+        elif name == "get_process_trace":
+            return _structured(req_id, _process_trace(kb, args))
         else:
             return _error(req_id, -32602, f"Unknown tool: {name}")
     except FileNotFoundError as exc:
@@ -372,6 +392,34 @@ def _explain_selection(kb: CodeGraphKB, args: dict) -> dict:
         "mode": pack.mode.value,
         "audit": pack.audit,
         "selected": [_item_dict(it) for it in pack.items],
+    }
+
+
+def _process_trace(kb: CodeGraphKB, args: dict) -> dict:
+    process_id = args.get("process_id")
+    symbol = args.get("symbol")
+    process_type = args.get("process_type")
+    limit = int(args.get("limit", 5))
+    if process_id:
+        proc = kb.get_process(process_id)
+        return {
+            "process_id": process_id,
+            "process": proc,
+            "matched": 1 if proc else 0,
+        }
+    if symbol:
+        procs = kb.find_processes_for_symbol(symbol, limit=limit)
+        return {
+            "symbol": symbol,
+            "processes": procs,
+            "matched": len(procs),
+        }
+    procs = kb.list_processes(process_type=process_type, limit=limit)
+    detailed = [kb.get_process(p["id"]) for p in procs]
+    return {
+        "process_type": process_type or "any",
+        "processes": [p for p in detailed if p],
+        "matched": len(detailed),
     }
 
 

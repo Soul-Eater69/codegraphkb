@@ -44,4 +44,4 @@ codegraphkb = "codegraphkb.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-codegraphkb = ["py.typed"]
+codegraphkb = ["py.typed", "assets/*.js", "assets/*.css"]
