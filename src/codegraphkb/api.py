@@ -314,12 +314,20 @@ class CodeGraphKB:
             store.close()
 
     # ---------- exporters (Phase 3.4) ----------
-    def export_graph(self, *, view: str = "full") -> dict:
+    def export_graph(self, *, view: str = "full",
+                     max_nodes: int | None = None,
+                     max_edges: int | None = None) -> dict:
         from codegraphkb.core.exporters import export_graph as _export_graph
 
         store = self._open_store()
         try:
-            return _export_graph(store, view=view, repo_path=str(self.config.repo_path))
+            return _export_graph(
+                store,
+                view=view,
+                repo_path=str(self.config.repo_path),
+                max_nodes=max_nodes,
+                max_edges=max_edges,
+            )
         finally:
             store.close()
 
@@ -338,7 +346,10 @@ class CodeGraphKB:
         finally:
             store.close()
 
-    def export_impact_graph(self, target: str) -> dict:
+    def export_impact_graph(self, target: str, *,
+                            max_depth: int = 2,
+                            max_nodes: int | None = None,
+                            max_edges: int | None = None) -> dict:
         from codegraphkb.core.exporters import export_impact_graph as _export_impact_graph
 
         store = self._open_store()
@@ -346,7 +357,10 @@ class CodeGraphKB:
             return _export_impact_graph(
                 store,
                 target,
+                max_depth=max_depth,
                 repo_path=str(self.config.repo_path),
+                max_nodes=max_nodes,
+                max_edges=max_edges,
             )
         finally:
             store.close()

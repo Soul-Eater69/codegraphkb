@@ -785,7 +785,7 @@ def export_impact_cmd(target: str, repo: str, fmt: str, out: str) -> None:
 
 # ---------- servers ----------
 @cli.command("serve", help="Run the MCP or HTTP server.")
-@click.argument("kind", type=click.Choice(["mcp", "api"]))
+@click.argument("kind", type=click.Choice(["mcp", "api", "ui"]))
 @click.option("--repo", "repo", type=click.Path(file_okay=False, exists=True), default=".")
 @click.option("--host", default="127.0.0.1")
 @click.option("--port", type=int, default=8765)
@@ -793,13 +793,20 @@ def serve_cmd(kind: str, repo: str, host: str, port: int) -> None:
     if kind == "mcp":
         from codegraphkb.server.mcp_server import run_stdio
         run_stdio(repo)
-    else:
+    elif kind == "api":
         try:
             from codegraphkb.server.api_server import run_api
         except ImportError as exc:  # pragma: no cover
             click.echo(f"Install codegraphkb[api] first: {exc}", err=True)
             sys.exit(1)
         run_api(repo, host=host, port=port)
+    else:
+        try:
+            from codegraphkb.server.ui_server import run_ui
+        except ImportError as exc:  # pragma: no cover
+            click.echo(f"Install codegraphkb[api] first: {exc}", err=True)
+            sys.exit(1)
+        run_ui(repo, host=host, port=port)
 
 
 def _pack_to_dict(pack) -> dict:
