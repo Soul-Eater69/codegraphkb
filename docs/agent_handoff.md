@@ -387,3 +387,57 @@ Backend sanity:
 3) Add grouped search dropdown in top query bar (currently results list in left rail).
 4) Add focused API tests for query command flows and neighborhood fallback.
 ```
+
+## Handoff - 2026-04-30 16:45 America/Chicago
+
+### Phase
+phase4/ui-reset-shell (strict bounded flow adjustments)
+
+### Agent
+Codex
+
+### Task
+Applied strict interaction constraints to prevent global graph hairballs and enforce target-first investigation flows.
+
+### Files Changed
+- `ui/src/App.tsx`
+- `ui/src/api/client.ts`
+- `ui/src/features/search/commandParser.ts`
+- `ui/src/graph/GraphScene.tsx`
+- `ui/src/layout/TopQueryBar.tsx`
+- `ui/src/panels/PerspectivesPanel.tsx`
+- `docs/agent_handoff.md`
+
+### Commands Run
+```bash
+cd ui
+npm run build
+```
+
+### Tests Run
+```bash
+Frontend build:
+  npm run build
+```
+
+### What Passed
+- Build passed after strict gating changes.
+- `full` is blocked in UI flows.
+- Top bar view selector now only exposes bounded baseline views (`repo`, `processes`).
+- Parser no longer treats `full/calls/symbols/framework` as direct global graph loads.
+- Calls/symbols/framework now require target-first behavior (search-driven pivot).
+- Process perspective defaults to "select one process first" instead of loading global process blob.
+- Neighborhood/impact fetches now use explicit bounded params (`depth`, `max_nodes`, `max_edges`).
+- Repo view enforces bounded API request + repo-focused filters (`CONTAINS`, repo/folder/file node kinds).
+- Empty scene now communicates guided investigation actions rather than dumping graphs.
+
+### What Failed / Blocked
+- None in this sub-pass.
+
+### Next Recommended Step
+```text
+1) Add grouped search result buckets in the left rail (Files/Functions/Classes/Routes/Processes/Tests).
+2) Implement explicit "calls target layout" vs generic neighborhood for symbol selections.
+3) Add framework target picker panel before framework graph render.
+4) Add backend tests for bounded params and target-first guards.
+```

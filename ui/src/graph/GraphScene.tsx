@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
-import { toSigmaGraph } from "./graphAdapter";
-import { SigmaCanvas } from "./SigmaCanvas";
 import type { GraphPayload, Perspective } from "../types/graph";
 import { EDGE_COLORS, NODE_COLORS } from "./graphStyles";
+import { toSigmaGraph } from "./graphAdapter";
+import { SigmaCanvas } from "./SigmaCanvas";
 
 interface GraphSceneProps {
   perspective: Perspective;
   graph: GraphPayload | null;
+  notice?: string;
   loading: boolean;
   error: string | null;
   selectedNodeKinds: Set<string>;
@@ -23,6 +24,7 @@ interface GraphSceneProps {
 export function GraphScene({
   perspective,
   graph,
+  notice,
   loading,
   error,
   selectedNodeKinds,
@@ -39,7 +41,9 @@ export function GraphScene({
   const [legendOpen, setLegendOpen] = useState(false);
 
   const tooLarge =
-    graph != null && ((graph.metadata.node_count ?? graph.nodes.length) > 10000 || (graph.metadata.edge_count ?? graph.edges.length) > 30000);
+    graph != null &&
+    ((graph.metadata.node_count ?? graph.nodes.length) > 1000 ||
+      (graph.metadata.edge_count ?? graph.edges.length) > 2000);
 
   const sigmaGraph = useMemo(() => {
     if (!graph || tooLarge) {
@@ -53,22 +57,22 @@ export function GraphScene({
       {graph == null && !loading && !error ? (
         <div className="scene-empty">
           <h2>Query-first graph workspace</h2>
-          <p>Pick a perspective or run a command to load a controlled graph slice.</p>
+          <p>{notice || "Pick a perspective or run a command to load a controlled graph slice."}</p>
           <div className="quick-actions">
             <button type="button" onClick={() => onQuickAction("repo")}>
               Open Repo Map
             </button>
             <button type="button" onClick={() => onQuickAction("calls")}>
-              Open Call Graph
+              Search Symbol First
             </button>
             <button type="button" onClick={() => onQuickAction("processes")}>
               Open Process Flows
             </button>
             <button type="button" onClick={() => onQuickAction("symbols")}>
-              Search Symbol View
+              Open Symbols Scope
             </button>
             <button type="button" onClick={() => onQuickAction("framework")}>
-              Open Framework Objects
+              Open Framework Entrypoints
             </button>
           </div>
         </div>
@@ -86,13 +90,13 @@ export function GraphScene({
                 Repo Map
               </button>
               <button type="button" onClick={() => onQuickAction("calls")}>
-                Call Graph
+                Search Symbol
               </button>
               <button type="button" onClick={() => onQuickAction("processes")}>
                 Process Flows
               </button>
               <button type="button" onClick={() => onQuickAction("symbols")}>
-                Search Symbol
+                Symbols Scope
               </button>
             </div>
           </div>

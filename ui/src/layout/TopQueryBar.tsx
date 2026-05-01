@@ -12,7 +12,7 @@ interface TopQueryBarProps {
   layoutStatus: "frozen" | "running";
 }
 
-const views: GraphView[] = ["repo", "symbols", "calls", "framework", "processes", "full"];
+const views: GraphView[] = ["repo", "processes"];
 
 export function TopQueryBar({
   summary,
@@ -40,7 +40,7 @@ export function TopQueryBar({
               onRunQuery();
             }
           }}
-          placeholder="repo | calls | impact <target> | neighborhood <node_id>"
+          placeholder="repo | search <symbol> | impact <target> | neighborhood <node_id>"
         />
         <button type="button" onClick={onRunQuery}>
           Run

@@ -64,11 +64,21 @@ export async function getNodeRelations(nodeId: string): Promise<NodeRelations> {
   return request<NodeRelations>(`/api/node/${encodeURIComponent(nodeId)}/relations`);
 }
 
-export async function getNeighborhood(nodeId: string, depth = 2): Promise<GraphPayload> {
+export async function getNeighborhood(
+  nodeId: string,
+  depth = 2,
+  opts?: { maxNodes?: number; maxEdges?: number },
+): Promise<GraphPayload> {
   const params = new URLSearchParams({
     node_id: nodeId,
     depth: String(depth),
   });
+  if (opts?.maxNodes) {
+    params.set("max_nodes", String(opts.maxNodes));
+  }
+  if (opts?.maxEdges) {
+    params.set("max_edges", String(opts.maxEdges));
+  }
   return request<GraphPayload>(`/api/neighborhood?${params.toString()}`);
 }
 
@@ -81,8 +91,20 @@ export async function getProcess(processId: string): Promise<ProcessDetails> {
   return request<ProcessDetails>(`/api/processes/${encodeURIComponent(processId)}`);
 }
 
-export async function getImpact(target: string): Promise<GraphPayload> {
+export async function getImpact(
+  target: string,
+  opts?: { depth?: number; maxNodes?: number; maxEdges?: number },
+): Promise<GraphPayload> {
   const params = new URLSearchParams({ target });
+  if (opts?.depth) {
+    params.set("depth", String(opts.depth));
+  }
+  if (opts?.maxNodes) {
+    params.set("max_nodes", String(opts.maxNodes));
+  }
+  if (opts?.maxEdges) {
+    params.set("max_edges", String(opts.maxEdges));
+  }
   return request<GraphPayload>(`/api/impact?${params.toString()}`);
 }
 

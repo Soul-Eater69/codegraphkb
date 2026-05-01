@@ -1,6 +1,6 @@
 import type { GraphView, QueryExecution } from "../../types/graph";
 
-const VIEW_SET = new Set<GraphView>(["repo", "symbols", "calls", "framework", "processes", "full"]);
+const VIEW_SET = new Set<GraphView>(["repo", "processes"]);
 
 export function parseQueryCommand(input: string): QueryExecution {
   const trimmed = input.trim();
@@ -22,10 +22,22 @@ export function parseQueryCommand(input: string): QueryExecution {
     return { perspective: "neighborhood", nodeId: tail };
   }
   if (head === "routes") {
-    return { perspective: "framework", view: "framework" };
+    return { perspective: "framework", target: "routes" };
   }
   if (head === "tests") {
-    return { perspective: "framework", view: "framework" };
+    return { perspective: "framework", target: "tests" };
+  }
+  if (head === "calls") {
+    return { perspective: "calls", target: tail || undefined };
+  }
+  if (head === "symbols") {
+    return { perspective: "symbols", target: tail || undefined };
+  }
+  if (head === "framework") {
+    return { perspective: "framework", target: tail || undefined };
+  }
+  if (head === "full") {
+    return { perspective: "none" };
   }
 
   return { perspective: "none" };
