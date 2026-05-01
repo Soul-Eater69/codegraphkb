@@ -1,10 +1,13 @@
 export const NODE_COLORS: Record<string, string> = {
+  repo: "#9a82ff",
+  folder: "#5f7595",
   file: "#4d8dff",
-  folder: "#6b7280",
   function: "#2bd576",
   method: "#2bd576",
-  class: "#ff9f43",
-  interface: "#ff9f43",
+  class: "#ff8a3d",
+  interface: "#ff8a3d",
+  type_alias: "#ffb380",
+  enum: "#ffb380",
   route: "#ff5ebc",
   test: "#f5c84b",
   test_block: "#f5c84b",
@@ -13,22 +16,35 @@ export const NODE_COLORS: Record<string, string> = {
   api_consumer: "#20c7d7",
   external: "#20c7d7",
   process: "#ff5d6c",
-  unknown: "#8b98ad",
+  symbol: "#9aa6bd",
+  unknown: "#7d8aa1",
+};
+
+export const NODE_HALO: Record<string, string> = {
+  process: "rgba(255, 93, 108, 0.28)",
+  route: "rgba(255, 94, 188, 0.28)",
+  class: "rgba(255, 138, 61, 0.28)",
+  interface: "rgba(255, 138, 61, 0.28)",
 };
 
 export const EDGE_COLORS: Record<string, string> = {
-  CONTAINS: "rgba(148, 163, 184, 0.28)",
-  DEFINES: "rgba(32, 199, 215, 0.35)",
+  CONTAINS: "rgba(120, 130, 150, 0.14)",
+  DEFINES: "rgba(32, 199, 215, 0.32)",
   CALLS: "rgba(124, 92, 255, 0.42)",
-  HANDLES_ROUTE: "rgba(255, 94, 188, 0.45)",
+  ACCESSES: "rgba(124, 92, 255, 0.32)",
+  IMPLEMENTS: "rgba(255, 138, 61, 0.42)",
+  EXTENDS: "rgba(255, 138, 61, 0.42)",
+  HANDLES_ROUTE: "rgba(255, 94, 188, 0.55)",
+  USES_MIDDLEWARE: "rgba(255, 94, 188, 0.32)",
   TESTS: "rgba(245, 200, 75, 0.45)",
   TESTS_SYMBOL: "rgba(245, 200, 75, 0.45)",
-  QUERIES: "rgba(165, 107, 255, 0.45)",
-  FETCHES: "rgba(32, 199, 215, 0.45)",
-  CALLS_EXTERNAL: "rgba(255, 138, 61, 0.45)",
-  STEP_IN_PROCESS: "rgba(255, 93, 108, 0.62)",
-  IMPORTS: "rgba(148, 163, 184, 0.3)",
-  UNKNOWN: "rgba(148, 163, 184, 0.28)",
+  QUERIES: "rgba(165, 107, 255, 0.5)",
+  FETCHES: "rgba(32, 199, 215, 0.5)",
+  CALLS_EXTERNAL: "rgba(255, 138, 61, 0.5)",
+  STEP_IN_PROCESS: "rgba(255, 93, 108, 0.7)",
+  PROCESS_STEP: "rgba(255, 93, 108, 0.7)",
+  IMPORTS: "rgba(120, 130, 150, 0.22)",
+  UNKNOWN: "rgba(120, 130, 150, 0.18)",
 };
 
 export function nodeColor(kind: string): string {
@@ -42,17 +58,41 @@ export function edgeColor(type: string): string {
 export function baseNodeSize(kind: string): number {
   switch (kind) {
     case "process":
-      return 10;
+      return 11;
     case "route":
-      return 8;
+      return 9;
     case "class":
     case "interface":
-      return 7;
+      return 8;
     case "folder":
       return 7;
     case "file":
       return 6;
+    case "function":
+    case "method":
+      return 5.5;
     default:
       return 5;
+  }
+}
+
+export function baseEdgeSize(type: string): number {
+  switch (type) {
+    case "STEP_IN_PROCESS":
+    case "PROCESS_STEP":
+      return 2.4;
+    case "HANDLES_ROUTE":
+      return 1.4;
+    case "CALLS":
+    case "CALLS_EXTERNAL":
+    case "FETCHES":
+    case "QUERIES":
+    case "TESTS":
+      return 1.0;
+    case "CONTAINS":
+    case "IMPORTS":
+      return 0.55;
+    default:
+      return 0.8;
   }
 }

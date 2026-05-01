@@ -5,31 +5,24 @@ interface GraphInfoPanelProps {
 }
 
 export function GraphInfoPanel({ summary }: GraphInfoPanelProps) {
+  const rows: Array<[string, string | number]> = [
+    ["Repo", summary?.repo ?? "—"],
+    ["Files", summary?.files ?? 0],
+    ["Symbols", summary?.symbols ?? 0],
+    ["Edges", summary?.edges ?? 0],
+    ["Processes", summary?.processes ?? 0],
+  ];
   return (
     <section className="panel">
       <h3>Graph Info</h3>
-      <ul>
-        <li>
-          <span>Repo</span>
-          <strong>{summary?.repo ?? "—"}</strong>
-        </li>
-        <li>
-          <span>Files</span>
-          <strong>{summary?.files ?? 0}</strong>
-        </li>
-        <li>
-          <span>Symbols</span>
-          <strong>{summary?.symbols ?? 0}</strong>
-        </li>
-        <li>
-          <span>Edges</span>
-          <strong>{summary?.edges ?? 0}</strong>
-        </li>
-        <li>
-          <span>Processes</span>
-          <strong>{summary?.processes ?? 0}</strong>
-        </li>
-      </ul>
+      <div className="info-rows">
+        {rows.map(([label, value]) => (
+          <div className="info-row" key={label}>
+            <span>{label}</span>
+            <span>{String(value)}</span>
+          </div>
+        ))}
+      </div>
       <p className="muted">Index: {summary?.index_health ?? "unknown"}</p>
     </section>
   );

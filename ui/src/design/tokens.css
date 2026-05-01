@@ -1,17 +1,43 @@
 :root {
-  --bg: #070912;
-  --panel: #0d111c;
-  --panel-2: #111827;
-  --canvas: #05070d;
-  --border: rgba(148, 163, 184, 0.14);
-  --text: #e6edf7;
+  --bg: #06080f;
+  --bg-2: #0a0e18;
+  --panel: #0d1220;
+  --panel-2: #121829;
+  --panel-hover: #161d31;
+  --canvas: #04060c;
+  --canvas-grid: rgba(124, 92, 255, 0.04);
+
+  --border: rgba(148, 163, 184, 0.12);
+  --border-strong: rgba(148, 163, 184, 0.22);
+  --border-accent: rgba(124, 92, 255, 0.45);
+
+  --text: #e9edf7;
+  --text-strong: #f6f8ff;
   --muted: #8b98ad;
-  --dim: #5f6b7c;
+  --dim: #5b6577;
+
   --primary: #7c5cff;
-  --primary-soft: rgba(124, 92, 255, 0.16);
+  --primary-strong: #9a82ff;
+  --primary-soft: rgba(124, 92, 255, 0.18);
+  --primary-glow: rgba(124, 92, 255, 0.35);
+
   --cyan: #20c7d7;
   --orange: #ff8a3d;
+  --pink: #ff5ebc;
   --green: #2bd576;
   --yellow: #f5c84b;
   --red: #ff5d6c;
+  --purple: #a56bff;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.55);
+  --shadow-glow: 0 0 0 1px rgba(124, 92, 255, 0.35), 0 8px 30px rgba(124, 92, 255, 0.18);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  --font-mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }

@@ -57,22 +57,27 @@ export function GraphScene({
       {graph == null && !loading && !error ? (
         <div className="scene-empty">
           <h2>Query-first graph workspace</h2>
-          <p>{notice || "Pick a perspective or run a command to load a controlled graph slice."}</p>
+          <p>{notice || "Pick a perspective or run a command to load a controlled graph slice. The full graph stays bounded — pivot from a target, never dump it all."}</p>
           <div className="quick-actions">
             <button type="button" onClick={() => onQuickAction("repo")}>
-              Open Repo Map
+              <strong>Repo Map</strong>
+              <small>Hierarchical view of folders and files. Bounded to 500 nodes.</small>
             </button>
             <button type="button" onClick={() => onQuickAction("calls")}>
-              Search Symbol First
+              <strong>Call Graph</strong>
+              <small>Search a symbol first, then explore callers and callees.</small>
             </button>
             <button type="button" onClick={() => onQuickAction("processes")}>
-              Open Process Flows
+              <strong>Process Flows</strong>
+              <small>Ordered route → handler → service → DB walkthroughs.</small>
             </button>
             <button type="button" onClick={() => onQuickAction("symbols")}>
-              Open Symbols Scope
+              <strong>Symbols Scope</strong>
+              <small>Pick a file or module to inspect classes and functions.</small>
             </button>
             <button type="button" onClick={() => onQuickAction("framework")}>
-              Open Framework Entrypoints
+              <strong>Framework Entrypoints</strong>
+              <small>Routes, middleware, models, external calls and tests.</small>
             </button>
           </div>
         </div>

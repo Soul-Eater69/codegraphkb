@@ -1,6 +1,6 @@
 import Graph from "graphology";
 import type { GraphPayload, Perspective } from "../types/graph";
-import { baseNodeSize, edgeColor, nodeColor } from "./graphStyles";
+import { baseEdgeSize, baseNodeSize, edgeColor, nodeColor } from "./graphStyles";
 import { applyDeterministicLayout } from "./layouts";
 
 export interface SigmaNodeAttrs {
@@ -15,6 +15,7 @@ export interface SigmaNodeAttrs {
   impactRole?: "target";
   hidden?: boolean;
   zIndex?: number;
+  type?: string;
 }
 
 export interface SigmaEdgeAttrs {
@@ -28,6 +29,7 @@ export interface SigmaEdgeAttrs {
   step?: number;
   hidden?: boolean;
   zIndex?: number;
+  type?: string;
 }
 
 export type SigmaGraph = Graph<SigmaNodeAttrs, SigmaEdgeAttrs>;
@@ -60,6 +62,7 @@ export function toSigmaGraph(
         typeof node.start_line === "number" && typeof node.end_line === "number"
           ? `${node.start_line}-${node.end_line}`
           : undefined,
+      type: "circle",
     });
   }
 
@@ -75,8 +78,12 @@ export function toSigmaGraph(
     const step =
       (typeof edge.metadata?.step === "number" ? edge.metadata.step : undefined) ??
       (typeof edge.metadata?.index === "number" ? edge.metadata.index : undefined);
+    if (graph.hasEdge(key)) {
+      edgeIndex += 1;
+      continue;
+    }
     graph.addEdgeWithKey(key, edge.source, edge.target, {
-      size: edge.type === "STEP_IN_PROCESS" ? 2.1 : 1.0,
+      size: baseEdgeSize(edge.type),
       color: edgeColor(edge.type),
       edgeType: edge.type || "UNKNOWN",
       confidence: edge.confidence,
@@ -84,18 +91,70 @@ export function toSigmaGraph(
       extractionSource: edge.extraction_source,
       reason: edge.reason,
       step,
+      type: "curved",
     });
     edgeIndex += 1;
   }
 
+  // For process flows, connect the process node to the first ordered step so
+  // the ordered layout has an obvious entrypoint.
+  if (perspective === "processes") {
+    bridgeProcessEntrypoint(graph, payload);
+  }
+
+  // Size by degree (hub emphasis)
   graph.forEachNode((node, attrs) => {
     const degree = graph.degree(node);
-    graph.mergeNodeAttributes(node, { size: attrs.size + Math.log(degree + 1) * 0.8 });
+    graph.mergeNodeAttributes(node, {
+      size: attrs.size + Math.log(degree + 1) * 1.1,
+    });
   });
 
   markImpactRoles(graph, payload);
   applyDeterministicLayout(graph, perspective);
   return graph;
+}
+
+function bridgeProcessEntrypoint(graph: SigmaGraph, payload: GraphPayload): void {
+  // Find process node
+  let processNode: string | null = null;
+  graph.forEachNode((node, attrs) => {
+    if (!processNode && attrs.kind === "process") {
+      processNode = node;
+    }
+  });
+  if (!processNode) {
+    return;
+  }
+  // Find earliest step source
+  let firstStepSrc: string | null = null;
+  let minStep = Number.POSITIVE_INFINITY;
+  for (const e of payload.edges) {
+    const s =
+      typeof e.metadata?.step === "number"
+        ? e.metadata.step
+        : typeof e.metadata?.index === "number"
+          ? e.metadata.index
+          : null;
+    if (s == null) continue;
+    if (s < minStep && graph.hasNode(e.source)) {
+      minStep = s;
+      firstStepSrc = e.source;
+    }
+  }
+  if (!firstStepSrc || firstStepSrc === processNode) {
+    return;
+  }
+  const key = `process-link:${processNode}:${firstStepSrc}`;
+  if (!graph.hasEdge(key)) {
+    graph.addEdgeWithKey(key, processNode, firstStepSrc, {
+      size: 1.6,
+      color: "rgba(255, 93, 108, 0.55)",
+      edgeType: "PROCESS_STEP",
+      step: -1,
+      type: "curved",
+    });
+  }
 }
 
 function markImpactRoles(graph: SigmaGraph, payload: GraphPayload): void {
@@ -105,7 +164,7 @@ function markImpactRoles(graph: SigmaGraph, payload: GraphPayload): void {
   }
   for (const node of graph.nodes()) {
     if (node.includes(target)) {
-      graph.mergeNodeAttributes(node, { color: "#ff5d6c", size: 12 });
+      graph.mergeNodeAttributes(node, { color: "#ff5d6c" });
       graph.setNodeAttribute(node, "impactRole", "target");
       return;
     }

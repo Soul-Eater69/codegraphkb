@@ -49,9 +49,19 @@ export function SigmaCanvas({
       edgeProgramClasses: { curved: EdgeCurveProgram as any },
       hideLabelsOnMove: true,
       renderEdgeLabels: false,
-      labelRenderedSizeThreshold: 8,
+      labelDensity: 0.6,
+      labelGridCellSize: 80,
+      labelRenderedSizeThreshold: graph.order > 200 ? 12 : 7,
+      labelFont: "Inter, system-ui, sans-serif",
+      labelSize: 11,
+      labelWeight: "500",
+      labelColor: { color: "#e9edf7" },
       zIndex: true,
       enableEdgeEvents: true,
+      defaultNodeColor: "#7d8aa1",
+      defaultEdgeColor: "rgba(120,130,150,0.18)",
+      minCameraRatio: 0.05,
+      maxCameraRatio: 14,
     });
     sigmaRef.current = sigma;
 
@@ -67,14 +77,24 @@ export function SigmaCanvas({
         precision_level: attrs.precisionLevel,
         extraction_source: attrs.extractionSource,
         reason: attrs.reason,
+        step: attrs.step,
       });
     });
     sigma.on("clickStage", () => onStageClick());
     sigma.on("enterNode", ({ node }) => {
       const attrs = graph.getNodeAttributes(node);
       setHovered({ label: attrs.label, kind: attrs.kind, path: attrs.filePath });
+      sigma.getContainer().style.cursor = "pointer";
     });
-    sigma.on("leaveNode", () => setHovered(null));
+    sigma.on("leaveNode", () => {
+      setHovered(null);
+      sigma.getContainer().style.cursor = "default";
+    });
+
+    // Auto-fit once on mount so the user lands centered
+    requestAnimationFrame(() => {
+      sigma.getCamera().animatedReset({ duration: 0 });
+    });
 
     return () => {
       stopLayout();
@@ -84,7 +104,10 @@ export function SigmaCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph]);
 
-  const neighborSet = useMemo(() => (graph ? nodeNeighborhood(graph, selectedNodeId) : new Set<string>()), [graph, selectedNodeId]);
+  const neighborSet = useMemo(
+    () => (graph ? nodeNeighborhood(graph, selectedNodeId) : new Set<string>()),
+    [graph, selectedNodeId],
+  );
 
   useEffect(() => {
     if (!graph || !sigmaRef.current) {
@@ -99,17 +122,19 @@ export function SigmaCanvas({
       if (selectedNodeId) {
         const related = neighborSet.has(node);
         if (!related) {
-          out.color = "rgba(107, 114, 128, 0.18)";
+          out.color = "rgba(120, 130, 150, 0.16)";
+          out.label = "";
         } else {
-          out.size = node === selectedNodeId ? data.size * 1.6 : data.size * 1.2;
+          out.size = node === selectedNodeId ? data.size * 1.7 : data.size * 1.25;
+          out.zIndex = 2;
         }
       }
-      if (selectedEdgeId) {
+      if (selectedEdgeId && graph.hasEdge(selectedEdgeId)) {
         const touches =
-          graph.hasEdge(selectedEdgeId) &&
-          (graph.source(selectedEdgeId) === node || graph.target(selectedEdgeId) === node);
+          graph.source(selectedEdgeId) === node || graph.target(selectedEdgeId) === node;
         if (!touches) {
-          out.color = "rgba(107, 114, 128, 0.2)";
+          out.color = "rgba(120, 130, 150, 0.18)";
+          out.label = "";
         }
       }
       return out;
@@ -117,12 +142,16 @@ export function SigmaCanvas({
     sigma.setSetting("edgeReducer", (edge, data) => {
       const out = { ...data };
       if (selectedNodeId && !edgeTouchesNode(graph, edge, selectedNodeId)) {
-        out.color = "rgba(107, 114, 128, 0.12)";
-        out.size = Math.max(0.5, data.size * 0.55);
+        out.color = "rgba(120, 130, 150, 0.08)";
+        out.size = Math.max(0.3, data.size * 0.4);
+      } else if (selectedNodeId) {
+        out.size = data.size * 1.6;
+        out.zIndex = 2;
       }
       if (selectedEdgeId && edge === selectedEdgeId) {
         out.color = "#ffffff";
-        out.size = data.size * 2.2;
+        out.size = data.size * 2.6;
+        out.zIndex = 3;
       }
       return out;
     });
@@ -134,7 +163,7 @@ export function SigmaCanvas({
       return;
     }
     const attrs = graph.getNodeAttributes(selectedNodeId);
-    sigmaRef.current.getCamera().animate({ x: attrs.x, y: attrs.y, ratio: 0.25 }, { duration: 280 });
+    sigmaRef.current.getCamera().animate({ x: attrs.x, y: attrs.y, ratio: 0.3 }, { duration: 320 });
   }, [graph, selectedNodeId]);
 
   useEffect(() => {
@@ -151,10 +180,10 @@ export function SigmaCanvas({
       runForceLayout(graph, 8);
       sigmaRef.current?.refresh();
       ticks += 1;
-      if (ticks >= 18) {
+      if (ticks >= 24) {
         stopLayout();
       }
-    }, 65);
+    }, 60);
   }
 
   function stopLayout() {
@@ -167,40 +196,37 @@ export function SigmaCanvas({
 
   function zoomIn() {
     const camera = sigmaRef.current?.getCamera();
-    if (!camera) {
-      return;
-    }
-    camera.animate({ ratio: camera.getState().ratio * 0.8 }, { duration: 140 });
+    if (!camera) return;
+    camera.animate({ ratio: camera.getState().ratio * 0.75 }, { duration: 160 });
   }
 
   function zoomOut() {
     const camera = sigmaRef.current?.getCamera();
-    if (!camera) {
-      return;
-    }
-    camera.animate({ ratio: camera.getState().ratio * 1.25 }, { duration: 140 });
+    if (!camera) return;
+    camera.animate({ ratio: camera.getState().ratio * 1.33 }, { duration: 160 });
   }
 
   function fitGraph() {
-    if (!sigmaRef.current) {
-      return;
-    }
-    sigmaRef.current.getCamera().animatedReset({ duration: 240 });
+    if (!sigmaRef.current) return;
+    sigmaRef.current.getCamera().animatedReset({ duration: 280 });
   }
 
   return (
     <div className="sigma-wrap">
       <div ref={containerRef} className="sigma-container" />
-      <div className="layout-pill">{layoutRunning ? "Layout running" : "Layout frozen"}</div>
+      <div className={`layout-pill ${layoutRunning ? "running" : "frozen"}`}>
+        <span className="layout-dot" />
+        {layoutRunning ? "Layout running" : "Layout frozen"}
+      </div>
       {hovered ? (
         <div className="hover-card">
           <strong>{hovered.label}</strong>
-          <span>{hovered.kind}</span>
+          <span className="hover-kind">{hovered.kind}</span>
           {hovered.path ? <small>{hovered.path}</small> : null}
         </div>
       ) : null}
       <div className="graph-controls">
-        <button type="button" onClick={fitGraph} title="Fit">
+        <button type="button" onClick={fitGraph} title="Fit to view">
           ⤢
         </button>
         <button type="button" onClick={zoomIn} title="Zoom in">
@@ -210,15 +236,20 @@ export function SigmaCanvas({
           −
         </button>
         {!layoutRunning ? (
-          <button type="button" onClick={startLayout} title="Run layout">
+          <button type="button" onClick={startLayout} title="Run force layout">
             ▶
           </button>
         ) : (
-          <button type="button" onClick={stopLayout} title="Freeze layout">
+          <button type="button" onClick={stopLayout} title="Freeze layout" className="active">
             ■
           </button>
         )}
-        <button type="button" onClick={onToggleLabels} title="Toggle labels">
+        <button
+          type="button"
+          onClick={onToggleLabels}
+          title="Toggle labels"
+          className={labelsEnabled ? "active" : ""}
+        >
           Aa
         </button>
       </div>
