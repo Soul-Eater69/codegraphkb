@@ -11,63 +11,64 @@ import {
   getSummary,
   searchNodes,
 } from "./api/client";
-import { AskPanel } from "./components/AskPanel";
-import { DetailsPanel } from "./components/DetailsPanel";
-import { FiltersPanel } from "./components/FiltersPanel";
-import { GraphCanvas } from "./components/GraphCanvas";
-import { ImpactPanel } from "./components/ImpactPanel";
-import { ProcessPanel } from "./components/ProcessPanel";
-import { Sidebar, type SidebarTab } from "./components/Sidebar";
-import { TopBar } from "./components/TopBar";
+import { parseQueryCommand } from "./features/search/commandParser";
+import { GraphScene } from "./graph/GraphScene";
+import { InspectorDrawer } from "./layout/InspectorDrawer";
+import { LeftRail } from "./layout/LeftRail";
+import { StatusBar } from "./layout/StatusBar";
+import { TopQueryBar } from "./layout/TopQueryBar";
+import { FileTreePanel } from "./panels/FileTreePanel";
+import { FilterPanel } from "./panels/FilterPanel";
+import { GraphInfoPanel } from "./panels/GraphInfoPanel";
+import { PerspectivesPanel } from "./panels/PerspectivesPanel";
+import { ProcessPanel } from "./panels/ProcessPanel";
 import type {
   FileTreeNode,
   GraphPayload,
   GraphView,
   NodeRelations,
+  Perspective,
   ProcessSummary,
+  QueryExecution,
   SearchResult,
   SummaryResponse,
 } from "./types/graph";
 
+const EMPTY_EXECUTION: QueryExecution = { perspective: "none" };
+
 export default function App() {
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
-  const [view, setView] = useState<GraphView>("repo");
   const [graph, setGraph] = useState<GraphPayload | null>(null);
-  const [processes, setProcesses] = useState<ProcessSummary[]>([]);
-  const [impactGraph, setImpactGraph] = useState<GraphPayload | null>(null);
-  const [fileTree, setFileTree] = useState<FileTreeNode | null>(null);
+  const [perspective, setPerspective] = useState<Perspective>("none");
+  const [selectedView, setSelectedView] = useState<GraphView>("repo");
+  const [execution, setExecution] = useState<QueryExecution>(EMPTY_EXECUTION);
 
-  const [activeTab, setActiveTab] = useState<SidebarTab>("Explorer");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [impactTarget, setImpactTarget] = useState("");
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
-  const [rightCollapsed, setRightCollapsed] = useState(false);
-
-  const [selectedDetailsTitle, setSelectedDetailsTitle] = useState("Selection");
-  const [selectedDetails, setSelectedDetails] = useState<unknown>(null);
-  const [selectedRelations, setSelectedRelations] = useState<NodeRelations | null>(null);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
-  const [highlightedNodeIds, setHighlightedNodeIds] = useState<Set<string>>(new Set());
+  const [processes, setProcesses] = useState<ProcessSummary[]>([]);
+  const [fileTree, setFileTree] = useState<FileTreeNode | null>(null);
 
   const [selectedNodeKinds, setSelectedNodeKinds] = useState<Set<string>>(new Set());
   const [selectedEdgeTypes, setSelectedEdgeTypes] = useState<Set<string>>(new Set());
 
-  const [loadingSummary, setLoadingSummary] = useState(false);
-  const [loadingGraph, setLoadingGraph] = useState(false);
-  const [loadingSearch, setLoadingSearch] = useState(false);
-  const [loadingProcesses, setLoadingProcesses] = useState(false);
-  const [loadingImpact, setLoadingImpact] = useState(false);
-  const [loadingDetails, setLoadingDetails] = useState(false);
-  const [loadingExplorer, setLoadingExplorer] = useState(false);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
-  const [errorSummary, setErrorSummary] = useState<string | null>(null);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [detailsTitle, setDetailsTitle] = useState("Selection");
+  const [details, setDetails] = useState<unknown>(null);
+  const [relations, setRelations] = useState<NodeRelations | null>(null);
+
+  const [loadingGraph, setLoadingGraph] = useState(false);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [loadingProcesses, setLoadingProcesses] = useState(false);
+  const [loadingTree, setLoadingTree] = useState(false);
+  const [layoutStatus, setLayoutStatus] = useState<"frozen" | "running">("frozen");
+
   const [errorGraph, setErrorGraph] = useState<string | null>(null);
-  const [errorProcesses, setErrorProcesses] = useState<string | null>(null);
-  const [errorImpact, setErrorImpact] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
-  const [errorExplorer, setErrorExplorer] = useState<string | null>(null);
+  const [errorTree, setErrorTree] = useState<string | null>(null);
+  const [errorProcesses, setErrorProcesses] = useState<string | null>(null);
 
   useEffect(() => {
     void loadSummary();
@@ -75,51 +76,14 @@ export default function App() {
     void loadFileTree();
   }, []);
 
-  useEffect(() => {
-    void loadGraph(view);
-  }, [view]);
-
-  const nodeKindCounts = useMemo(
-    () => countValues(graph?.nodes.map((n) => n.kind) ?? []),
-    [graph],
-  );
-  const edgeTypeCounts = useMemo(
-    () => countValues(graph?.edges.map((e) => e.type) ?? []),
-    [graph],
-  );
-
-  const groupedSearch = useMemo(() => groupSearchResults(searchResults), [searchResults]);
+  const nodeKindCounts = useMemo(() => counts(graph?.nodes.map((n) => n.kind) ?? []), [graph]);
+  const edgeTypeCounts = useMemo(() => counts(graph?.edges.map((e) => e.type) ?? []), [graph]);
 
   async function loadSummary() {
-    setLoadingSummary(true);
-    setErrorSummary(null);
     try {
       setSummary(await getSummary());
-    } catch (err) {
-      setErrorSummary(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoadingSummary(false);
-    }
-  }
-
-  async function loadGraph(nextView: GraphView) {
-    setLoadingGraph(true);
-    setErrorGraph(null);
-    try {
-      const payload = await getGraph(nextView);
-      setGraph(payload);
-      setSelectedDetailsTitle(`Perspective: ${nextView}`);
-      setSelectedDetails(payload.metadata);
-      setSelectedRelations(null);
-      setSelectedNodeKinds(new Set());
-      setSelectedEdgeTypes(new Set());
-      setSelectedNodeId(null);
-      setSelectedEdgeId(null);
-      setHighlightedNodeIds(new Set());
-    } catch (err) {
-      setErrorGraph(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoadingGraph(false);
+    } catch {
+      setSummary(null);
     }
   }
 
@@ -129,279 +93,244 @@ export default function App() {
     try {
       setProcesses(await getProcesses());
     } catch (err) {
-      setErrorProcesses(err instanceof Error ? err.message : String(err));
+      setErrorProcesses(asError(err));
     } finally {
       setLoadingProcesses(false);
     }
   }
 
   async function loadFileTree() {
-    setLoadingExplorer(true);
-    setErrorExplorer(null);
+    setLoadingTree(true);
+    setErrorTree(null);
     try {
       setFileTree(await getFilesTree());
     } catch (err) {
-      setErrorExplorer(err instanceof Error ? err.message : String(err));
+      setErrorTree(asError(err));
     } finally {
-      setLoadingExplorer(false);
+      setLoadingTree(false);
     }
   }
 
-  async function runSearch() {
-    const q = searchQuery.trim();
-    if (!q) {
-      setSearchResults([]);
+  async function executeView(view: GraphView) {
+    setLoadingGraph(true);
+    setErrorGraph(null);
+    setPerspective(view);
+    setExecution({ perspective: view, view });
+    try {
+      const payload = await getGraph(view);
+      setGraph(payload);
+      clearSelection();
+    } catch (err) {
+      setErrorGraph(asError(err));
+    } finally {
+      setLoadingGraph(false);
+    }
+  }
+
+  async function runQuery() {
+    const parsed = parseQueryCommand(query);
+    if (parsed.perspective === "none") {
+      await runSearchQuery(query);
       return;
     }
-    setLoadingSearch(true);
-    setErrorDetails(null);
+    setExecution(parsed);
+    if (parsed.view) {
+      setSelectedView(parsed.view);
+      await executeView(parsed.view);
+      return;
+    }
+    if (parsed.perspective === "impact" && parsed.target) {
+      await executeImpact(parsed.target);
+      return;
+    }
+    if (parsed.perspective === "neighborhood" && parsed.nodeId) {
+      await executeNeighborhood(parsed.nodeId);
+    }
+  }
+
+  async function runSearchQuery(term: string) {
+    const q = term.trim();
+    if (!q) {
+      return;
+    }
+    const result = await searchNodes(q);
+    setSearchResults(result.results);
+    if (result.results.length > 0) {
+      await selectSearchResult(result.results[0]);
+    }
+  }
+
+  async function executeImpact(target: string) {
+    setLoadingGraph(true);
+    setErrorGraph(null);
+    setPerspective("impact");
     try {
-      const res = await searchNodes(q);
-      setSearchResults(res.results);
-      if (res.results.length > 0) {
-        await selectSearchResult(res.results[0]);
-      } else {
-        setSelectedDetailsTitle(`Search: ${q}`);
-        setSelectedDetails({ query: q, results: [] });
-        setSelectedRelations(null);
-      }
+      const payload = await getImpact(target);
+      setGraph(payload);
+      clearSelection();
+      setDetailsTitle(`Impact: ${target}`);
+      setDetails(payload.metadata);
+      setInspectorOpen(true);
     } catch (err) {
-      setErrorDetails(err instanceof Error ? err.message : String(err));
+      setErrorGraph(asError(err));
     } finally {
-      setLoadingSearch(false);
+      setLoadingGraph(false);
+    }
+  }
+
+  async function executeNeighborhood(nodeId: string) {
+    setLoadingGraph(true);
+    setErrorGraph(null);
+    setPerspective("neighborhood");
+    try {
+      const payload = await getNeighborhood(nodeId, 2);
+      setGraph(payload);
+      setSelectedNodeId(nodeId);
+      setSelectedEdgeId(null);
+      await loadNodeDetails(nodeId);
+    } catch (err) {
+      setErrorGraph(asError(err));
+    } finally {
+      setLoadingGraph(false);
     }
   }
 
   async function selectSearchResult(result: SearchResult) {
-    setLoadingDetails(true);
-    setErrorDetails(null);
-    try {
-      if (!isNodeVisibleInGraph(result.id)) {
-        const neighborhood = await getNeighborhood(result.id, 2);
-        setGraph(neighborhood);
-        setSelectedDetailsTitle(`Neighborhood: ${result.label}`);
-        setSelectedDetails(neighborhood.metadata);
-      }
-      const [details, relations] = await Promise.all([
-        getNode(result.id),
-        getNodeRelations(result.id).catch(() => ({})),
-      ]);
-      setSelectedDetailsTitle(`Node: ${result.label}`);
-      setSelectedDetails(details);
-      setSelectedRelations(relations as NodeRelations);
-      setSelectedNodeId(result.id);
-      setSelectedEdgeId(null);
-      setHighlightedNodeIds(new Set([result.id]));
-    } catch (err) {
-      setErrorDetails(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoadingDetails(false);
-    }
-  }
-
-  async function selectProcess(processId: string) {
-    setLoadingDetails(true);
-    setErrorDetails(null);
-    try {
-      const proc = await getProcess(processId);
-      const processNodeId = proc.node_id ?? `process:${processId}`;
-      if (!isNodeVisibleInGraph(processNodeId)) {
-        const neighborhood = await getNeighborhood(processNodeId, 2);
-        setGraph(neighborhood);
-      }
-      setSelectedDetailsTitle(`Process: ${proc.label}`);
-      setSelectedDetails(proc);
-      setSelectedRelations({
-        processes: [{ id: proc.id, label: proc.label, process_type: proc.process_type }],
-      });
-      setSelectedNodeId(processNodeId);
-      setSelectedEdgeId(null);
-      setHighlightedNodeIds(new Set([processNodeId]));
-    } catch (err) {
-      setErrorDetails(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoadingDetails(false);
-    }
-  }
-
-  async function runImpact() {
-    const target = impactTarget.trim();
-    if (!target) {
+    const nodeId = result.id;
+    if (!nodeInGraph(nodeId)) {
+      await executeNeighborhood(nodeId);
       return;
     }
-    setLoadingImpact(true);
-    setErrorImpact(null);
-    try {
-      const payload = await getImpact(target);
-      setImpactGraph(payload);
-      setGraph(payload);
-      setSelectedDetailsTitle(`Impact: ${target}`);
-      setSelectedDetails(payload);
-      setSelectedRelations(null);
-      setSelectedNodeId(null);
-      setSelectedEdgeId(null);
-      setHighlightedNodeIds(new Set());
-      setActiveTab("Impact");
-    } catch (err) {
-      setErrorImpact(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoadingImpact(false);
-    }
+    setSelectedNodeId(nodeId);
+    setSelectedEdgeId(null);
+    await loadNodeDetails(nodeId);
   }
 
-  function toggleNodeKind(kind: string) {
-    setSelectedNodeKinds((prev) => toggleSelection(prev, kind));
-  }
-
-  function toggleEdgeType(type: string) {
-    setSelectedEdgeTypes((prev) => toggleSelection(prev, type));
-  }
-
-  async function selectNodeById(nodeId: string) {
+  async function loadNodeDetails(nodeId: string) {
     setLoadingDetails(true);
     setErrorDetails(null);
     try {
-      const [details, relations] = await Promise.all([
+      const [nodeDetails, nodeRelations] = await Promise.all([
         getNode(nodeId),
-        getNodeRelations(nodeId).catch(() => ({})),
+        getNodeRelations(nodeId).catch(() => ({} as NodeRelations)),
       ]);
-      const label = extractNodeLabel(details) ?? nodeId;
-      setSelectedDetailsTitle(`Node: ${label}`);
-      setSelectedDetails(details);
-      setSelectedRelations(relations as NodeRelations);
-      setSelectedNodeId(nodeId);
-      setSelectedEdgeId(null);
-      setHighlightedNodeIds(new Set([nodeId]));
+      setDetails(nodeDetails);
+      setRelations(nodeRelations);
+      setDetailsTitle(`Node: ${nodeId}`);
+      setInspectorOpen(true);
     } catch (err) {
-      setErrorDetails(err instanceof Error ? err.message : String(err));
+      setErrorDetails(asError(err));
     } finally {
       setLoadingDetails(false);
     }
+  }
+
+  async function selectProcess(process: ProcessSummary) {
+    const nodeId = process.node_id ?? `process:${process.id}`;
+    if (!nodeInGraph(nodeId)) {
+      await executeNeighborhood(nodeId);
+    }
+    try {
+      const detail = await getProcess(process.id);
+      setSelectedNodeId(nodeId);
+      setSelectedEdgeId(null);
+      setDetailsTitle(`Process: ${process.label}`);
+      setDetails(detail);
+      setRelations({
+        processes: [{ id: process.id, label: process.label, process_type: process.process_type }],
+      });
+      setInspectorOpen(true);
+    } catch {
+      // ignore detail load failure; process list item still selected
+    }
+  }
+
+  function nodeInGraph(nodeId: string): boolean {
+    return graph?.nodes.some((n) => n.id === nodeId) ?? false;
   }
 
   function clearSelection() {
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
-    setSelectedRelations(null);
-    setHighlightedNodeIds(new Set());
   }
 
-  function isNodeVisibleInGraph(nodeId: string): boolean {
-    if (!graph) {
-      return false;
-    }
-    return graph.nodes.some((n) => n.id === nodeId);
+  function toggleNodeKind(kind: string) {
+    setSelectedNodeKinds((prev) => toggleFilter(prev, kind));
+  }
+
+  function toggleEdgeType(type: string) {
+    setSelectedEdgeTypes((prev) => toggleFilter(prev, type));
   }
 
   return (
     <div className="app-shell">
-      <TopBar
+      <TopQueryBar
         summary={summary}
-        view={view}
-        onViewChange={setView}
-        searchQuery={searchQuery}
-        onSearchQueryChange={setSearchQuery}
-        onSearchSubmit={() => void runSearch()}
-        loading={loadingSearch}
+        query={query}
+        onQueryChange={setQuery}
+        onRunQuery={() => void runQuery()}
         onAskClick={() => {
-          setSelectedDetailsTitle("Ask CodeGraphKB");
-          setSelectedDetails({
-            note: "Generate a context pack using selected nodes via POST /api/context.",
+          setDetailsTitle("Ask CodeGraphKB");
+          setDetails({
+            endpoint: "POST /api/context",
             selected_node_ids: selectedNodeId ? [selectedNodeId] : [],
           });
-          setSelectedRelations(null);
+          setRelations(null);
+          setInspectorOpen(true);
         }}
-        leftCollapsed={leftCollapsed}
-        rightCollapsed={rightCollapsed}
-        onToggleLeft={() => setLeftCollapsed((v) => !v)}
-        onToggleRight={() => setRightCollapsed((v) => !v)}
+        selectedView={selectedView}
+        onViewChange={(view) => {
+          setSelectedView(view);
+          setQuery(view);
+          void executeView(view);
+        }}
+        execution={execution}
+        layoutStatus={layoutStatus}
       />
 
-      {errorSummary ? <div className="top-error">{errorSummary}</div> : null}
-      {loadingSummary ? <div className="top-info">Loading summary...</div> : null}
-
-      <main
-        className={`main-layout ${leftCollapsed ? "left-collapsed" : ""} ${rightCollapsed ? "right-collapsed" : ""}`}
-      >
-        <Sidebar activeTab={activeTab} onTabChange={setActiveTab} collapsed={leftCollapsed}>
-          {activeTab === "Explorer" ? (
-            <div className="explorer-panel">
-              <h3>Repository</h3>
-              <p className="muted">{summary?.repo_path ?? "No summary loaded."}</p>
-              <h3>Search Results</h3>
-              {Object.entries(groupedSearch).map(([group, items]) => (
-                <section key={group}>
-                  <h4>{group}</h4>
-                  <ul>
-                    {items.map((result) => (
-                      <li key={result.id}>
-                        <button type="button" onClick={() => void selectSearchResult(result)}>
-                          <span>{result.label}</span>
-                          <small>
-                            {result.kind} · {result.file_path ?? result.id}
-                          </small>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ))}
-              {searchResults.length === 0 ? <p className="muted">Search to start graph investigation.</p> : null}
-
-              <h3>File Explorer</h3>
-              {loadingExplorer ? <p className="muted">Loading tree...</p> : null}
-              {errorExplorer ? <p className="error">{errorExplorer}</p> : null}
-              {!loadingExplorer && !errorExplorer && fileTree ? (
-                <div className="tree-root">{renderTree(fileTree, (path) => void selectSearchResult({ id: `file:${path}`, label: path.split("/").pop() ?? path, kind: "file", file_path: path }))}</div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {activeTab === "Filters" ? (
-            <FiltersPanel
-              nodeKindCounts={nodeKindCounts}
-              edgeTypeCounts={edgeTypeCounts}
-              selectedNodeKinds={selectedNodeKinds}
-              selectedEdgeTypes={selectedEdgeTypes}
-              onToggleNodeKind={toggleNodeKind}
-              onToggleEdgeType={toggleEdgeType}
-            />
-          ) : null}
-
-          {activeTab === "Processes" ? (
-            <ProcessPanel
-              processes={processes}
-              loading={loadingProcesses}
-              error={errorProcesses}
-              onSelectProcess={(id) => void selectProcess(id)}
-            />
-          ) : null}
-
-          {activeTab === "Impact" ? (
-            <ImpactPanel
-              impactTarget={impactTarget}
-              onImpactTargetChange={setImpactTarget}
-              onRunImpact={() => void runImpact()}
-              loading={loadingImpact}
-              error={errorImpact}
-              impactGraph={impactGraph}
-            />
-          ) : null}
-
-          <AskPanel
-            onOpen={() => {
-              setSelectedDetailsTitle("Ask CodeGraphKB");
-              setSelectedDetails({
-                task: "Describe or edit from selected graph elements.",
-                endpoint: "POST /api/context",
-              });
-              setSelectedRelations(null);
-            }}
+      <div className="main-layout">
+        <LeftRail>
+          <GraphInfoPanel summary={summary} />
+          <PerspectivesPanel active={perspective} onSelectView={(view) => void executeView(view)} />
+          <FilterPanel
+            nodeKinds={nodeKindCounts}
+            edgeTypes={edgeTypeCounts}
+            selectedNodeKinds={selectedNodeKinds}
+            selectedEdgeTypes={selectedEdgeTypes}
+            onToggleNodeKind={toggleNodeKind}
+            onToggleEdgeType={toggleEdgeType}
           />
-        </Sidebar>
+          <FileTreePanel
+            tree={fileTree}
+            loading={loadingTree}
+            error={errorTree}
+            onSelectFile={(path) => void selectSearchResult({ id: `file:${path}`, label: path, kind: "file", file_path: path })}
+          />
+          <ProcessPanel
+            processes={processes}
+            loading={loadingProcesses}
+            error={errorProcesses}
+            onSelectProcess={(process) => void selectProcess(process)}
+          />
+          {searchResults.length > 0 ? (
+            <section className="panel">
+              <h3>Search Results</h3>
+              <ul>
+                {searchResults.slice(0, 15).map((result) => (
+                  <li key={result.id}>
+                    <button type="button" onClick={() => void selectSearchResult(result)}>
+                      <span>{result.label}</span>
+                      <small>{result.kind}</small>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </LeftRail>
 
-        <GraphCanvas
-          view={view}
+        <GraphScene
+          perspective={perspective}
           graph={graph}
           loading={loadingGraph}
           error={errorGraph}
@@ -409,44 +338,49 @@ export default function App() {
           selectedEdgeTypes={selectedEdgeTypes}
           selectedNodeId={selectedNodeId}
           selectedEdgeId={selectedEdgeId}
-          highlightedNodeIds={highlightedNodeIds}
-          nodeKindCounts={nodeKindCounts}
-          edgeTypeCounts={edgeTypeCounts}
-          onNodeSelect={(nodeId) => void selectNodeById(nodeId)}
-          onStageClick={clearSelection}
-          onEdgeSelect={(edgeId, edgeData) => {
+          onNodeClick={(nodeId) => {
+            setSelectedNodeId(nodeId);
+            setSelectedEdgeId(null);
+            void loadNodeDetails(nodeId);
+          }}
+          onEdgeClick={(edgeId, edgePayload) => {
             setSelectedEdgeId(edgeId);
             setSelectedNodeId(null);
-            setSelectedRelations(null);
-            setSelectedDetailsTitle(`Edge: ${edgeId}`);
-            setSelectedDetails(edgeData);
+            setDetailsTitle(`Edge: ${edgeId}`);
+            setDetails(edgePayload);
+            setRelations(null);
+            setInspectorOpen(true);
           }}
-          onClearSelection={clearSelection}
-          onRequestView={setView}
+          onStageClick={clearSelection}
+          onQuickAction={(action) => void executeView(action === "framework" ? "framework" : action)}
+          onLayoutStatusChange={setLayoutStatus}
         />
 
-        <DetailsPanel
-          title={selectedDetailsTitle}
-          details={selectedDetails}
-          relations={selectedRelations}
+        <InspectorDrawer
+          open={inspectorOpen}
+          title={detailsTitle}
+          details={details}
+          relations={relations}
           loading={loadingDetails}
           error={errorDetails}
-          collapsed={rightCollapsed}
+          onClose={() => setInspectorOpen(false)}
         />
-      </main>
+      </div>
+
+      <StatusBar summary={summary} nodeCount={graph?.nodes.length ?? 0} edgeCount={graph?.edges.length ?? 0} />
     </div>
   );
 }
 
-function countValues(values: string[]): Record<string, number> {
-  const counts: Record<string, number> = {};
-  for (const v of values) {
-    counts[v] = (counts[v] ?? 0) + 1;
+function counts(items: string[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const item of items) {
+    out[item] = (out[item] ?? 0) + 1;
   }
-  return counts;
+  return out;
 }
 
-function toggleSelection(source: Set<string>, value: string): Set<string> {
+function toggleFilter(source: Set<string>, value: string): Set<string> {
   const next = new Set(source);
   if (next.has(value)) {
     next.delete(value);
@@ -456,74 +390,6 @@ function toggleSelection(source: Set<string>, value: string): Set<string> {
   return next;
 }
 
-function extractNodeLabel(details: unknown): string | null {
-  if (typeof details !== "object" || details == null) {
-    return null;
-  }
-  const node = (details as { node?: Record<string, unknown> }).node;
-  if (!node) {
-    return null;
-  }
-  const label = node.label;
-  return typeof label === "string" ? label : null;
-}
-
-function groupSearchResults(results: SearchResult[]): Record<string, SearchResult[]> {
-  const groups: Record<string, SearchResult[]> = {
-    Files: [],
-    Functions: [],
-    Classes: [],
-    Routes: [],
-    Processes: [],
-    Tests: [],
-    Other: [],
-  };
-
-  for (const item of results) {
-    const kind = item.kind.toLowerCase();
-    if (kind === "file") {
-      groups.Files.push(item);
-    } else if (kind.includes("function") || kind === "method") {
-      groups.Functions.push(item);
-    } else if (kind === "class" || kind === "interface") {
-      groups.Classes.push(item);
-    } else if (kind.includes("route")) {
-      groups.Routes.push(item);
-    } else if (kind.includes("process")) {
-      groups.Processes.push(item);
-    } else if (kind.includes("test")) {
-      groups.Tests.push(item);
-    } else {
-      groups.Other.push(item);
-    }
-  }
-
-  return Object.fromEntries(Object.entries(groups).filter(([, arr]) => arr.length > 0));
-}
-
-function renderTree(node: FileTreeNode, onFileClick: (path: string) => void, depth = 0): JSX.Element {
-  if (node.type === "file") {
-    return (
-      <button type="button" className="tree-file" style={{ paddingLeft: `${8 + depth * 12}px` }} onClick={() => onFileClick(node.path)}>
-        {node.name}
-        <small>{node.symbol_count ?? 0}</small>
-      </button>
-    );
-  }
-
-  return (
-    <details className="tree-folder" open={depth < 1}>
-      <summary>
-        <span>{node.name || "repo"}</span>
-        <small>{node.file_count ?? 0}</small>
-      </summary>
-      <div>
-        {(node.children ?? []).map((child) => (
-          <div key={`${child.type}:${child.path}`}>
-            {renderTree(child, onFileClick, depth + 1)}
-          </div>
-        ))}
-      </div>
-    </details>
-  );
+function asError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }

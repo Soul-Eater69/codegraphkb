@@ -1,15 +1,19 @@
-export type GraphView = "repo" | "symbols" | "calls" | "framework" | "processes" | "full";
-export type Perspective = GraphView | "impact" | "neighborhood" | "none";
+export type GraphView =
+  | "full"
+  | "repo"
+  | "symbols"
+  | "calls"
+  | "framework"
+  | "processes";
 
 export interface GraphMetadata {
   repo_path?: string;
   view?: string;
   schema_version?: number;
+  schema_version_indexed?: string;
   node_count?: number;
   edge_count?: number;
   indexed_at?: string;
-  target?: string;
-  seed_node?: string;
   [key: string]: unknown;
 }
 
@@ -52,7 +56,7 @@ export interface SummaryResponse {
   languages?: Record<string, number>;
   node_kinds?: Record<string, number>;
   edge_types?: Record<string, number>;
-  index_health?: string;
+  index_health?: string | Record<string, unknown>;
   stale_files?: number;
   indexed_at?: string;
   [key: string]: unknown;
@@ -73,21 +77,10 @@ export interface SearchResponse {
   results: SearchResult[];
 }
 
-export interface NodeRelations {
-  callers?: Array<Record<string, unknown>>;
-  callees?: Array<Record<string, unknown>>;
-  tests?: Array<Record<string, unknown>>;
-  processes?: Array<Record<string, unknown>>;
-  routes?: Array<Record<string, unknown>>;
-  imports?: Array<Record<string, unknown>>;
-  [key: string]: unknown;
-}
-
 export interface NodeDetails {
-  node?: Record<string, unknown>;
+  node: Record<string, unknown>;
   relationships?: Record<string, unknown>;
   process?: Record<string, unknown>;
-  [key: string]: unknown;
 }
 
 export interface ProcessSummary {
@@ -95,6 +88,8 @@ export interface ProcessSummary {
   node_id?: string;
   label: string;
   process_type: string;
+  entrypoint_id?: string;
+  terminal_id?: string;
   step_count: number;
   confidence: number;
   metadata?: Record<string, unknown>;
@@ -121,6 +116,16 @@ export interface FileTreeNode {
   symbol_count?: number;
 }
 
+export interface NodeRelations {
+  callers?: Array<Record<string, unknown>>;
+  callees?: Array<Record<string, unknown>>;
+  tests?: Array<Record<string, unknown>>;
+  processes?: Array<Record<string, unknown>>;
+  routes?: Array<Record<string, unknown>>;
+  imports?: Array<Record<string, unknown>>;
+  [key: string]: unknown;
+}
+
 export interface ContextRequest {
   task: string;
   mode?: string;
@@ -139,11 +144,4 @@ export interface ContextResponse {
   process_traces: unknown[];
   audit: Record<string, unknown>;
   context: Record<string, unknown>;
-}
-
-export interface QueryExecution {
-  perspective: Perspective;
-  view?: GraphView;
-  target?: string;
-  nodeId?: string;
 }
