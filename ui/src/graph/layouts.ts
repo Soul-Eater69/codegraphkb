@@ -55,93 +55,149 @@ export function runForceLayout(graph: SigmaGraph, iterations = 120): void {
 }
 
 // =================================================================
-// Repo: hierarchical radial tree (root → folders → files)
+// Repo: packed-circle cluster layout. Each folder owns a sub-circle;
+// its files sit inside that circle, and sub-folders are packed inside
+// alongside them. Pure deterministic placement (no FA2), then noverlap.
 // =================================================================
 function layoutRepoTree(graph: SigmaGraph): void {
-  // Build parent → children map from CONTAINS edges (source contains target).
   const childrenOf = new Map<string, string[]>();
   const parents = new Map<string, string>();
   graph.forEachEdge((_e, attrs, source, target) => {
-    if (attrs.edgeType !== "CONTAINS") {
-      return;
-    }
-    if (!childrenOf.has(source)) {
-      childrenOf.set(source, []);
-    }
+    if (attrs.edgeType !== "CONTAINS") return;
+    if (!childrenOf.has(source)) childrenOf.set(source, []);
     childrenOf.get(source)!.push(target);
     parents.set(target, source);
   });
 
-  // Roots = nodes that have no parent in CONTAINS, prioritizing repo/folder kinds.
-  const roots: string[] = [];
+  let roots: string[] = [];
   graph.forEachNode((node) => {
-    if (!parents.has(node)) {
-      roots.push(node);
-    }
+    if (!parents.has(node)) roots.push(node);
   });
+  // If there's a single synthetic root, "explode" it: use ITS direct children
+  // as the layout roots so the canvas shows them as separate constellations
+  // instead of one big ring around the root.
+  let syntheticRoot: string | null = null;
+  if (roots.length === 1) {
+    const onlyRoot = roots[0];
+    const directChildren = childrenOf.get(onlyRoot) ?? [];
+    if (directChildren.length >= 2) {
+      syntheticRoot = onlyRoot;
+      roots = [...directChildren];
+      // Detach so radius/recursion don't include the root anymore
+      childrenOf.delete(onlyRoot);
+    }
+  }
+  // eslint-disable-next-line no-console
+  console.log(
+    "[layoutRepoTree v4] nodes=",
+    graph.order,
+    "edges=",
+    graph.size,
+    "roots=",
+    roots.length,
+    "synthetic=",
+    syntheticRoot,
+    roots.slice(0, 8),
+  );
   if (roots.length === 0) {
+    // eslint-disable-next-line no-console
+    console.warn("[layoutRepoTree] no roots → falling back to layoutClusteredForce");
     layoutClusteredForce(graph);
     return;
   }
 
-  // If multiple roots, group them as siblings under a virtual center.
-  const subtreeSize = new Map<string, number>();
-  function computeSize(n: string): number {
-    if (subtreeSize.has(n)) {
-      return subtreeSize.get(n)!;
-    }
+  // Recursive radius computation: leaf radius = 18, parent radius = packs
+  // children + folder hub.
+  const radiusOf = new Map<string, number>();
+  const FILE_R = 18;
+  const FOLDER_HUB = 36;
+  const computeRadius = (n: string): number => {
+    const cached = radiusOf.get(n);
+    if (cached !== undefined) return cached;
     const kids = childrenOf.get(n) ?? [];
-    let total = 1;
-    for (const k of kids) {
-      total += computeSize(k);
-    }
-    subtreeSize.set(n, total);
-    return total;
-  }
-  for (const r of roots) {
-    computeSize(r);
-  }
-
-  // Assign each root a wedge of the full circle proportional to subtree size.
-  const totalSize = roots.reduce((s, r) => s + (subtreeSize.get(r) ?? 1), 0);
-  let cursor = -Math.PI / 2;
-  const placeSubtree = (
-    node: string,
-    angleStart: number,
-    angleEnd: number,
-    depth: number,
-  ): void => {
-    const angle = (angleStart + angleEnd) / 2;
-    const radius = depth === 0 ? 0 : 140 + depth * 200;
-    graph.mergeNodeAttributes(node, {
-      x: Math.cos(angle) * radius,
-      y: Math.sin(angle) * radius,
-    });
-    const kids = childrenOf.get(node) ?? [];
     if (kids.length === 0) {
-      return;
+      radiusOf.set(n, FILE_R);
+      return FILE_R;
     }
-    const kidTotal = kids.reduce((s, k) => s + (subtreeSize.get(k) ?? 1), 0);
-    let local = angleStart;
-    // Sort children deterministically so layout is stable across runs
-    kids.sort((a, b) => (subtreeSize.get(b) ?? 1) - (subtreeSize.get(a) ?? 1));
+    // Sum of child areas → square-root for a packed-circle radius estimate
+    let areaSum = 0;
     for (const k of kids) {
-      const span = ((subtreeSize.get(k) ?? 1) / kidTotal) * (angleEnd - angleStart);
-      placeSubtree(k, local, local + span, depth + 1);
-      local += span;
+      const r = computeRadius(k);
+      areaSum += r * r;
+    }
+    // Padding multiplier so children don't overlap the folder hub
+    const r = Math.max(FOLDER_HUB, Math.sqrt(areaSum) * 1.9 + 14);
+    radiusOf.set(n, r);
+    return r;
+  };
+  for (const r of roots) computeRadius(r);
+
+  // Place children of `node` packed inside a circle of radius `r` around (cx, cy).
+  // Folder hub sits at center; children placed on an inner ring sized by their own radii.
+  const placeCluster = (node: string, cx: number, cy: number): void => {
+    graph.mergeNodeAttributes(node, { x: cx, y: cy });
+    const kids = childrenOf.get(node) ?? [];
+    if (kids.length === 0) return;
+
+    // Sort: big subtrees first → they claim outer slots
+    kids.sort((a, b) => (radiusOf.get(b) ?? FILE_R) - (radiusOf.get(a) ?? FILE_R));
+
+    // Sum of child circumference proportions → angle slots
+    const totalChildR = kids.reduce((s, k) => s + (radiusOf.get(k) ?? FILE_R), 0);
+    // Ring radius: place each child far enough that its circle clears the hub
+    const myR = radiusOf.get(node) ?? FOLDER_HUB;
+    const innerRing = Math.max(myR * 0.55, FOLDER_HUB + 18);
+
+    let cursor = -Math.PI / 2;
+    for (const k of kids) {
+      const childR = radiusOf.get(k) ?? FILE_R;
+      const share = childR / Math.max(totalChildR, 1);
+      const angle = cursor + share * Math.PI;
+      // Place child center at (innerRing + childR) so its circle is inside parent's
+      const distance = innerRing + childR * 0.4;
+      const x = cx + Math.cos(angle) * distance;
+      const y = cy + Math.sin(angle) * distance;
+      placeCluster(k, x, y);
+      cursor += share * Math.PI * 2;
     }
   };
 
-  if (roots.length === 1) {
-    placeSubtree(roots[0], 0, Math.PI * 2, 0);
+  // Place roots so total layout fits a roughly-square area, not a long arc.
+  // Use a simple grid-pack: rows × cols of root circles.
+  roots.sort((a, b) => (radiusOf.get(b) ?? FILE_R) - (radiusOf.get(a) ?? FILE_R));
+  const rootCount = roots.length;
+  if (rootCount === 1) {
+    placeCluster(roots[0], 0, 0);
   } else {
-    for (const r of roots) {
-      const span = ((subtreeSize.get(r) ?? 1) / Math.max(totalSize, 1)) * Math.PI * 2;
-      placeSubtree(r, cursor, cursor + span, 1);
-      cursor += span;
-    }
+    // Grid the roots
+    const cols = Math.max(1, Math.ceil(Math.sqrt(rootCount)));
+    const rows = Math.ceil(rootCount / cols);
+    const maxR = Math.max(...roots.map((r) => radiusOf.get(r) ?? FILE_R));
+    const cellSize = maxR * 2.2 + 80;
+    const totalW = cols * cellSize;
+    const totalH = rows * cellSize;
+    roots.forEach((r, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = col * cellSize - totalW / 2 + cellSize / 2;
+      const y = row * cellSize - totalH / 2 + cellSize / 2;
+      placeCluster(r, x, y);
+    });
   }
-  resolveOverlap(graph, 4);
+
+  // Place the synthetic root at the canvas center so its label is visible
+  if (syntheticRoot) {
+    graph.mergeNodeAttributes(syntheticRoot, { x: 0, y: 0, size: 14 });
+  }
+
+  // Boost folder visual size so hubs read clearly
+  graph.forEachNode((node, attrs) => {
+    if (attrs.kind === "folder" || attrs.kind === "repo") {
+      graph.mergeNodeAttributes(node, { size: Math.max(attrs.size, 9) });
+    }
+  });
+
+  resolveOverlap(graph, 12);
 }
 
 // =================================================================
