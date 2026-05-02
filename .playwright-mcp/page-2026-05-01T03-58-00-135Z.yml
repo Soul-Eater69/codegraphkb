@@ -1,0 +1,101 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - strong [ref=e6]: CodeGraphKB
+      - generic [ref=e7]: codegraphkb
+    - generic [ref=e8]:
+      - textbox "repo | search <symbol> | impact <target> | neighborhood <node_id>" [ref=e9]
+      - button "Run" [ref=e10] [cursor=pointer]
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - text: View
+        - combobox "View" [ref=e13]:
+          - option "repo" [selected]
+          - option "processes"
+      - generic [ref=e14]: frozen
+      - generic [ref=e15]: repo
+      - button "Ask" [ref=e16] [cursor=pointer]
+  - generic [ref=e17]:
+    - complementary [ref=e18]:
+      - generic [ref=e19]:
+        - heading "Graph Info" [level=3] [ref=e20]
+        - generic [ref=e21]:
+          - generic [ref=e22]:
+            - generic [ref=e23]: Repo
+            - generic [ref=e24]: codegraphkb
+          - generic [ref=e25]:
+            - generic [ref=e26]: Files
+            - generic [ref=e27]: "79"
+          - generic [ref=e28]:
+            - generic [ref=e29]: Symbols
+            - generic [ref=e30]: "584"
+          - generic [ref=e31]:
+            - generic [ref=e32]: Edges
+            - generic [ref=e33]: "3928"
+          - generic [ref=e34]:
+            - generic [ref=e35]: Processes
+            - generic [ref=e36]: "0"
+        - paragraph [ref=e37]: "Index: ok"
+      - generic [ref=e38]:
+        - heading "Perspectives" [level=3] [ref=e39]
+        - generic [ref=e40]:
+          - button "Repo Map" [active] [ref=e41] [cursor=pointer]
+          - button "Processes" [ref=e42] [cursor=pointer]
+          - button "Call Graph" [ref=e43] [cursor=pointer]
+          - button "Symbols" [ref=e44] [cursor=pointer]
+          - button "Framework" [ref=e45] [cursor=pointer]
+      - generic [ref=e46]:
+        - heading "Filters" [level=3] [ref=e47]
+        - heading "Node Kinds" [level=4] [ref=e48]
+        - generic [ref=e104]:
+          - button "file 79" [ref=e105] [cursor=pointer]:
+            - generic [ref=e107]: file
+            - generic [ref=e108]: "79"
+          - button "folder 17" [ref=e109] [cursor=pointer]:
+            - generic [ref=e111]: folder
+            - generic [ref=e112]: "17"
+        - heading "Edge Types" [level=4] [ref=e50]
+        - button "CONTAINS 79" [ref=e114] [cursor=pointer]:
+          - generic [ref=e116]: CONTAINS
+          - generic [ref=e117]: "79"
+      - generic [ref=e52]:
+        - heading "File Tree" [level=3] [ref=e53]
+        - group [ref=e89]:
+          - generic "> codegraphkb 79" [ref=e90] [cursor=pointer]:
+            - text: ">"
+            - generic [ref=e91]: codegraphkb
+            - generic [ref=e92]: "79"
+          - generic [ref=e93]:
+            - group [ref=e95]:
+              - generic "> src 72" [ref=e96] [cursor=pointer]:
+                - text: ">"
+                - generic [ref=e97]: src
+                - generic [ref=e98]: "72"
+              - text: "> > > > > > > > > > > > >"
+            - group [ref=e100]:
+              - generic "> tests 7" [ref=e101] [cursor=pointer]:
+                - text: ">"
+                - generic [ref=e102]: tests
+                - generic [ref=e103]: "7"
+              - text: "> >"
+      - generic [ref=e55]:
+        - heading "Processes" [level=3] [ref=e56]
+        - list
+    - generic [ref=e58]:
+      - generic [ref=e118]:
+        - generic [ref=e127]: Layout frozen
+        - generic [ref=e129]:
+          - button "Fit" [ref=e130] [cursor=pointer]
+          - button "+" [ref=e131] [cursor=pointer]
+          - button "-" [ref=e132] [cursor=pointer]
+          - button "Run" [ref=e133] [cursor=pointer]
+          - button "Aa" [ref=e134] [cursor=pointer]
+      - button "Legend >" [ref=e79] [cursor=pointer]
+    - complementary [ref=e80]:
+      - button "Inspector ▸" [ref=e81] [cursor=pointer]
+  - generic [ref=e82]:
+    - generic [ref=e83]: 79 files
+    - generic [ref=e84]: 584 symbols
+    - generic [ref=e85]: 0 processes
+    - generic [ref=e86]: 96 scene nodes
+    - generic [ref=e87]: 79 scene edges

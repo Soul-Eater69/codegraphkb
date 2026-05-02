@@ -1,6 +1,6 @@
 import Graph from "graphology";
 import type { GraphPayload, Perspective } from "../types/graph";
-import { baseEdgeSize, baseNodeSize, edgeColor, nodeColor } from "./graphStyles";
+import { baseEdgeSize, baseNodeSize, edgeColor, nodeColor, overviewNodeColor } from "./graphStyles";
 import { applyDeterministicLayout } from "./layouts";
 
 export interface SigmaNodeAttrs {
@@ -13,6 +13,7 @@ export interface SigmaNodeAttrs {
   filePath?: string;
   lineRange?: string;
   impactRole?: "target";
+  focusRole?: "seed";
   hidden?: boolean;
   zIndex?: number;
   type?: string;
@@ -54,7 +55,10 @@ export function toSigmaGraph(
       x: 0,
       y: 0,
       size: baseNodeSize(node.kind),
-      color: nodeColor(node.kind),
+      color:
+        perspective === "full"
+          ? overviewNodeColor(node.kind, node.file_path ?? node.id)
+          : nodeColor(node.kind),
       label: node.label || node.id,
       kind: node.kind || "unknown",
       filePath: node.file_path,
@@ -91,7 +95,7 @@ export function toSigmaGraph(
       extractionSource: edge.extraction_source,
       reason: edge.reason,
       step,
-      type: "curved",
+      type: edge.type === "CONTAINS" ? "line" : "curved",
     });
     edgeIndex += 1;
   }
@@ -111,6 +115,7 @@ export function toSigmaGraph(
   });
 
   markImpactRoles(graph, payload);
+  markFocusRoles(graph, payload);
   applyDeterministicLayout(graph, perspective);
   return graph;
 }
@@ -169,4 +174,13 @@ function markImpactRoles(graph: SigmaGraph, payload: GraphPayload): void {
       return;
     }
   }
+}
+
+function markFocusRoles(graph: SigmaGraph, payload: GraphPayload): void {
+  const seed = typeof payload.metadata.seed_node === "string" ? payload.metadata.seed_node : null;
+  if (!seed || !graph.hasNode(seed)) {
+    return;
+  }
+  graph.mergeNodeAttributes(seed, { color: "#f6f8ff", size: 12 });
+  graph.setNodeAttribute(seed, "focusRole", "seed");
 }

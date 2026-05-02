@@ -6,14 +6,14 @@ interface GraphInfoPanelProps {
 
 export function GraphInfoPanel({ summary }: GraphInfoPanelProps) {
   const rows: Array<[string, string | number]> = [
-    ["Repo", summary?.repo ?? "—"],
+    ["Repo", summary?.repo ?? "-"],
     ["Files", summary?.files ?? 0],
     ["Symbols", summary?.symbols ?? 0],
     ["Edges", summary?.edges ?? 0],
     ["Processes", summary?.processes ?? 0],
   ];
   return (
-    <section className="panel">
+    <section className="panel graph-info-panel">
       <h3>Graph Info</h3>
       <div className="info-rows">
         {rows.map(([label, value]) => (

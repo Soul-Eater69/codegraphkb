@@ -441,3 +441,261 @@ Frontend build:
 3) Add framework target picker panel before framework graph render.
 4) Add backend tests for bounded params and target-first guards.
 ```
+
+## Handoff - 2026-04-30 23:14 America/Chicago
+
+### Phase
+phase4/ui-reset-shell / broken UI recovery
+
+### Agent
+Codex
+
+### Task
+Fixed the query-first graph UI after the desktop layout collapsed and non-repo perspective actions fell back to the empty menu.
+
+### Files Changed
+- `ui/src/App.tsx`
+- `ui/src/design/tokens.css`
+- `ui/src/graph/GraphScene.tsx`
+- `ui/src/graph/SigmaCanvas.tsx`
+- `ui/src/graph/graphAdapter.ts`
+- `ui/src/graph/graphStyles.ts`
+- `ui/src/graph/layouts.ts`
+- `ui/src/styles.css`
+- `docs/agent_handoff.md`
+
+### Commands Run
+```bash
+cd ui
+npm run build
+```
+
+Manual browser smoke used `codegraph serve ui --port 8766` and opened `http://127.0.0.1:8766/`.
+
+### Tests Run
+```bash
+Frontend build:
+  npm run build
+
+Browser smoke:
+  initial workspace at 1200x900
+  Repo Map perspective
+  Symbols perspective
+```
+
+### What Passed
+- Build passed.
+- Desktop layout no longer stacks the left rail above the graph at 1200px width.
+- Initial screen remains stable and renders no graph until the user chooses a perspective/query.
+- Repo Map opens a bounded repo-only scene and collapses stale inspector state.
+- Symbols now auto-selects a file with symbols when available instead of returning to the quick-action menu.
+- Processes now auto-selects the first loaded process when available; if none exist, it shows a scoped empty state.
+- Repo layout is deterministic/frozen and uses a hierarchy-style placement rather than force layout.
+- CONTAINS edges are quieter and straight instead of curved by default.
+- Inspector still defaults to Summary, with Raw JSON only on the Raw tab.
+
+### What Failed / Blocked
+- The local indexed repo used for smoke testing currently has zero process flows, so process auto-selection was validated by code path/build rather than visual process rendering.
+- Browser smoke artifacts were generated locally for verification.
+- Cleanup of `.playwright-mcp/` and screenshot artifacts was denied by the filesystem sandbox, so they may appear as untracked files.
+
+### Next Recommended Step
+```text
+1) Validate on a repo/index that has process flows to confirm the first process opens automatically.
+2) Add frontend tests for perspective buttons so Symbols/Processes cannot regress to the empty menu.
+3) Add a focused backend repo-map endpoint with true folder->folder CONTAINS edges to make the hierarchy even cleaner.
+```
+
+## Handoff - 2026-04-30 23:31 America/Chicago
+
+### Phase
+phase4/ui-gitnexus-inspired-visual-pass
+
+### Agent
+Codex
+
+### Task
+Moved the UI closer to the GitNexus-style graph explorer: black canvas-first workspace, compact top search/header, slimmer left explorer, brighter graph palette, and bounded repo graph auto-load.
+
+### Files Changed
+- `ui/src/App.tsx`
+- `ui/src/design/tokens.css`
+- `ui/src/graph/GraphScene.tsx`
+- `ui/src/graph/graphStyles.ts`
+- `ui/src/layout/InspectorDrawer.tsx`
+- `ui/src/layout/TopQueryBar.tsx`
+- `ui/src/panels/GraphInfoPanel.tsx`
+- `ui/src/panels/ProcessPanel.tsx`
+- `ui/src/styles.css`
+- `docs/agent_handoff.md`
+
+### Commands Run
+```bash
+cd ui
+npm run build
+```
+
+Browser smoke used `http://127.0.0.1:8766/?v=gitnexus1`.
+
+### Tests Run
+```bash
+Frontend build:
+  npm run build
+
+Browser smoke:
+  auto-loaded Repo Map
+  Symbols perspective
+```
+
+### What Passed
+- Build passed.
+- UI now auto-loads a bounded GitNexus-style Overview instead of landing on a dead quick-action menu.
+- Top bar is closer to GitNexus: logo mark, centered search/query input, compact counts, view selector, status, and Nexus AI button.
+- Left rail is slimmer and denser; graph canvas dominates the viewport.
+- Graph stage uses a near-black background, subtle dot field, floating legend, and bottom-right controls.
+- Labels are off by default so the graph reads more like a clean visual scene.
+- Node colors are more saturated and GitNexus-like.
+- Overview loads a capped mixed graph (`full` view, max 900 nodes / 1800 edges) for a colorful graph galaxy.
+- Nodes have a lightweight breathing animation via Sigma reducers and a requestAnimationFrame refresh loop for graphs up to 1200 nodes.
+- Inspector mojibake was cleaned up.
+
+### What Failed / Blocked
+- ForceAtlas2 worker animation is not wired yet; current layout is deterministic/static with breathing node motion.
+- Screenshot/snapshot artifacts from Playwright still could not be removed due filesystem permission denial.
+
+### Next Recommended Step
+```text
+1) Add ForceAtlas2 worker layout for Overview only, with a visible "Layout optimizing..." pill and stop control.
+2) Add animated search/blast-radius highlights similar to GitNexus AI citation highlights.
+3) Replace text graph-control buttons with icon buttons once lucide-react is installed.
+```
+
+## Handoff - 2026-05-01 00:04 America/Chicago
+
+### Phase
+phase4/ui-gitnexus-behavior-pass
+
+### Agent
+Codex
+
+### Task
+Finished the GitNexus-inspired graph interaction pass after the user reported the UI still felt broken and non-repo perspectives fell back to the menu.
+
+### Files Changed
+- `ui/src/App.tsx`
+- `ui/src/graph/GraphScene.tsx`
+- `ui/src/graph/SigmaCanvas.tsx`
+- `ui/src/layout/TopQueryBar.tsx`
+- `docs/agent_handoff.md`
+
+### Commands Run
+```bash
+cd ui
+npm run build
+```
+
+Browser smoke used `http://127.0.0.1:8766/?v=no-width-fix`.
+
+### Tests Run
+```bash
+Frontend build:
+  npm run build
+
+Browser smoke:
+  Overview auto-load
+  Symbols perspective
+  Call Graph perspective
+  Processes perspective
+  console/page error capture
+```
+
+### What Passed
+- Build passed.
+- Overview now opens as a GitNexus-style bounded mixed graph with worker ForceAtlas2 layout, curved edges, and breathing node animation.
+- Perspective selector includes overview/repo/symbols/calls/framework/processes.
+- Symbols no longer falls back to the menu; it auto-opens the first file with symbols when available.
+- Calls/framework/processes now load bounded graph slices instead of showing the old scoped empty prompt.
+- Search results are grouped in a top-bar popover; selecting a result highlights/focuses the node and clears the popover.
+- Sigma no-width container errors were fixed with `allowInvalidContainer`.
+- Browser smoke reported zero console/page errors after switching Symbols -> Call Graph -> Processes.
+
+### What Failed / Blocked
+- The local smoke index has `processes: 0`, so true ordered process-flow visuals still need validation on an index with process maps.
+- Playwright screenshot artifacts remain untracked because sandbox cleanup was denied earlier.
+
+### Next Recommended Step
+```text
+1) Validate with examples/ts-process-express or another indexed repo that has process maps.
+2) Add a regression test/smoke for perspective buttons so they always render graph slices.
+3) Add lucide-react or a tiny icon system for final control polish.
+```
+
+## Handoff - 2026-05-01 12:50 America/Chicago
+
+### Phase
+phase4/gitnexus-fluidity-click-fix
+
+### Agent
+Codex
+
+### Task
+Responded to the user report that the graph animation stuttered and node clicks appeared to do nothing.
+
+### Files Changed
+- `ui/src/App.tsx`
+- `ui/src/graph/GraphScene.tsx`
+- `ui/src/graph/SigmaCanvas.tsx`
+- `ui/src/layout/InspectorDrawer.tsx`
+- `ui/src/styles.css`
+- `docs/agent_handoff.md`
+
+### Commands Run
+```bash
+cd ui
+npm run build
+```
+
+Browser smoke used:
+```text
+http://127.0.0.1:8766/?v=stability2
+http://127.0.0.1:8766/?v=stability3
+http://127.0.0.1:8766/?v=stability4
+http://127.0.0.1:8766/?v=stability5
+```
+
+### Tests Run
+```bash
+npm run build
+```
+
+Manual browser smoke:
+```text
+Overview loads with Sigma canvas
+Repo Map node click opens inspector
+Inspector shows immediate node/file summary
+Symbols perspective loads a bounded symbols scene
+Processes perspective shows a specific no-processes empty state for this index
+Console error capture returned zero errors on the stability2 smoke
+```
+
+### What Passed
+- Build passed after every patch.
+- Node click now sets inspector content immediately from the in-scene graph node before `/api/node` finishes.
+- Direct node click no longer camera-jumps into a blank-looking canvas.
+- Hover card is cleared on node click so it does not cover the selected node.
+- Selection dimming was relaxed so the graph remains visible after selection.
+- ForceAtlas2 worker tuning was slowed down and the extra forced refresh loop during layout was removed to reduce stutter.
+- Edges remain visible during movement for a more continuous GitNexus-like scene.
+- The graph background has a denser multi-layer star field.
+- Empty states are perspective-specific instead of looking like the same generic menu.
+
+### What Failed / Blocked
+- The current local index has `processes: 0`, so process-flow animation still needs validation against an index that actually contains process maps.
+- Playwright screenshots and `.playwright-mcp/` remain untracked; prior cleanup attempts were denied by filesystem permissions.
+
+### Next Recommended Step
+```text
+1) Smoke with examples/ts-process-express or another process-map index.
+2) Add a real Playwright regression for node click -> inspector summary.
+3) Add a deterministic screenshot/snapshot check for Overview so visual regressions are caught quickly.
+```

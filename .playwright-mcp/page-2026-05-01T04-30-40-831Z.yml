@@ -1,0 +1,137 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: ◇
+      - generic [ref=e7]:
+        - strong [ref=e8]: CodeGraphKB
+        - generic [ref=e9]: codegraphkb
+    - generic [ref=e10]:
+      - 'textbox "Search nodes... or run: repo, search <symbol>, impact <target>" [ref=e11]'
+      - button "Run" [ref=e12] [cursor=pointer]
+    - generic [ref=e13]:
+      - generic [ref=e14]: 584 nodes
+      - generic [ref=e15]: 3928 edges
+      - generic [ref=e16]:
+        - text: View
+        - combobox "View" [ref=e17]:
+          - option "repo" [selected]
+          - option "processes"
+      - generic [ref=e18]: frozen
+      - generic [ref=e19]: symbols
+      - button "Nexus AI" [ref=e20] [cursor=pointer]
+  - generic [ref=e21]:
+    - complementary [ref=e22]:
+      - generic [ref=e23]:
+        - heading "Graph Info" [level=3] [ref=e24]
+        - generic [ref=e25]:
+          - generic [ref=e26]:
+            - generic [ref=e27]: Repo
+            - generic [ref=e28]: codegraphkb
+          - generic [ref=e29]:
+            - generic [ref=e30]: Files
+            - generic [ref=e31]: "79"
+          - generic [ref=e32]:
+            - generic [ref=e33]: Symbols
+            - generic [ref=e34]: "584"
+          - generic [ref=e35]:
+            - generic [ref=e36]: Edges
+            - generic [ref=e37]: "3928"
+          - generic [ref=e38]:
+            - generic [ref=e39]: Processes
+            - generic [ref=e40]: "0"
+        - paragraph [ref=e41]: "Index: ok"
+      - generic [ref=e42]:
+        - heading "Perspectives" [level=3] [ref=e43]
+        - generic [ref=e44]:
+          - button "Repo Map" [ref=e45] [cursor=pointer]
+          - button "Processes" [ref=e46] [cursor=pointer]
+          - button "Call Graph" [ref=e47] [cursor=pointer]
+          - button "Symbols" [active] [ref=e48] [cursor=pointer]
+          - button "Framework" [ref=e49] [cursor=pointer]
+      - generic [ref=e50]:
+        - heading "Filters" [level=3] [ref=e51]
+        - heading "Node Kinds" [level=4] [ref=e52]
+        - generic [ref=e74]:
+          - button "file 1" [ref=e121] [cursor=pointer]:
+            - generic [ref=e77]: file
+            - generic [ref=e78]: "1"
+          - button "class 1" [ref=e122] [cursor=pointer]:
+            - generic [ref=e124]: class
+            - generic [ref=e125]: "1"
+          - button "function 1" [ref=e126] [cursor=pointer]:
+            - generic [ref=e128]: function
+            - generic [ref=e129]: "1"
+        - heading "Edge Types" [level=4] [ref=e54]
+        - button "CONTAINS 2" [ref=e130] [cursor=pointer]:
+          - generic [ref=e86]: CONTAINS
+          - generic [ref=e87]: "2"
+      - generic [ref=e56]:
+        - heading "File Tree" [level=3] [ref=e57]
+        - group [ref=e89]:
+          - generic "› codegraphkb 79" [ref=e90] [cursor=pointer]:
+            - text: ›
+            - generic [ref=e91]: codegraphkb
+            - generic [ref=e92]: "79"
+          - generic [ref=e93]:
+            - group [ref=e95]:
+              - generic "› src 72" [ref=e96] [cursor=pointer]:
+                - text: ›
+                - generic [ref=e97]: src
+                - generic [ref=e98]: "72"
+              - text: › › › › › › › › › › › › ›
+            - group [ref=e100]:
+              - generic "› tests 7" [ref=e101] [cursor=pointer]:
+                - text: ›
+                - generic [ref=e102]: tests
+                - generic [ref=e103]: "7"
+              - text: › ›
+      - generic [ref=e59]:
+        - heading "Processes" [level=3] [ref=e60]
+        - list
+    - generic [ref=e62]:
+      - generic [ref=e104]:
+        - generic [ref=e113]: Layout frozen
+        - generic [ref=e115]:
+          - button "Fit" [ref=e116] [cursor=pointer]
+          - button "+" [ref=e117] [cursor=pointer]
+          - button "-" [ref=e118] [cursor=pointer]
+          - button "Run" [ref=e119] [cursor=pointer]
+          - button "Aa" [ref=e120] [cursor=pointer]
+      - button "Legend >" [ref=e65] [cursor=pointer]
+    - complementary [ref=e66]:
+      - generic [ref=e138]:
+        - heading "Inspector" [level=3] [ref=e139]
+        - button "×" [ref=e140] [cursor=pointer]
+      - paragraph [ref=e141]: "File: src/codegraphkb/core/eval/extraction.py"
+      - generic [ref=e142]:
+        - button "Summary" [ref=e143] [cursor=pointer]
+        - button "Relations" [ref=e144] [cursor=pointer]
+        - button "Process" [ref=e145] [cursor=pointer]
+        - button "Impact" [ref=e146] [cursor=pointer]
+        - button "Context" [ref=e147] [cursor=pointer]
+        - button "Raw" [ref=e148] [cursor=pointer]
+      - generic [ref=e150]:
+        - generic [ref=e151]:
+          - generic [ref=e152]: id
+          - strong [ref=e153]: file:src/codegraphkb/core/eval/extraction.py
+        - generic [ref=e154]:
+          - generic [ref=e155]: kind
+          - strong [ref=e156]: file
+        - generic [ref=e157]:
+          - generic [ref=e158]: label
+          - strong [ref=e159]: extraction.py
+        - generic [ref=e160]:
+          - generic [ref=e161]: qname
+          - strong [ref=e162]: "-"
+        - generic [ref=e163]:
+          - generic [ref=e164]: file
+          - strong [ref=e165]: src/codegraphkb/core/eval/extraction.py
+        - generic [ref=e166]:
+          - generic [ref=e167]: lines
+          - strong [ref=e168]: "-"
+  - generic [ref=e68]:
+    - generic [ref=e69]: 79 files
+    - generic [ref=e70]: 584 symbols
+    - generic [ref=e71]: 0 processes
+    - generic [ref=e72]: 3 scene nodes
+    - generic [ref=e73]: 2 scene edges

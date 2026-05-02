@@ -27,6 +27,8 @@ export function applyDeterministicLayout(graph: SigmaGraph, perspective: Perspec
       layoutConcentric(graph);
       return;
     case "calls":
+      layoutCalls(graph);
+      return;
     case "framework":
       layoutClusteredForce(graph);
       return;
@@ -60,6 +62,9 @@ export function runForceLayout(graph: SigmaGraph, iterations = 120): void {
 // alongside them. Pure deterministic placement (no FA2), then noverlap.
 // =================================================================
 function layoutRepoTree(graph: SigmaGraph): void {
+  layoutRepoTreeBands(graph);
+  return;
+
   const childrenOf = new Map<string, string[]>();
   const parents = new Map<string, string>();
   graph.forEachEdge((_e, attrs, source, target) => {
@@ -68,6 +73,28 @@ function layoutRepoTree(graph: SigmaGraph): void {
     childrenOf.get(source)!.push(target);
     parents.set(target, source);
   });
+
+  // The API only emits CONTAINS for folder->file. Reconstruct folder->folder
+  // hierarchy by parsing path strings: `folder:src/codegraphkb/core` is a
+  // child of `folder:src/codegraphkb`, which is a child of `folder:src`.
+  const allFolderIds = new Set<string>();
+  graph.forEachNode((node, attrs) => {
+    if (attrs.kind === "folder") allFolderIds.add(node);
+  });
+  for (const folderId of allFolderIds) {
+    if (parents.has(folderId)) continue;
+    // folderId is "folder:<path>" - strip the prefix, get parent path
+    const path = folderId.startsWith("folder:") ? folderId.slice("folder:".length) : folderId;
+    const lastSlash = path.lastIndexOf("/");
+    if (lastSlash <= 0) continue; // top-level folder
+    const parentPath = path.slice(0, lastSlash);
+    const parentId = `folder:${parentPath}`;
+    if (allFolderIds.has(parentId) && parentId !== folderId) {
+      if (!childrenOf.has(parentId)) childrenOf.set(parentId, []);
+      childrenOf.get(parentId)!.push(folderId);
+      parents.set(folderId, parentId);
+    }
+  }
 
   let roots: string[] = [];
   graph.forEachNode((node) => {
@@ -87,21 +114,7 @@ function layoutRepoTree(graph: SigmaGraph): void {
       childrenOf.delete(onlyRoot);
     }
   }
-  // eslint-disable-next-line no-console
-  console.log(
-    "[layoutRepoTree v4] nodes=",
-    graph.order,
-    "edges=",
-    graph.size,
-    "roots=",
-    roots.length,
-    "synthetic=",
-    syntheticRoot,
-    roots.slice(0, 8),
-  );
   if (roots.length === 0) {
-    // eslint-disable-next-line no-console
-    console.warn("[layoutRepoTree] no roots → falling back to layoutClusteredForce");
     layoutClusteredForce(graph);
     return;
   }
@@ -119,7 +132,7 @@ function layoutRepoTree(graph: SigmaGraph): void {
       radiusOf.set(n, FILE_R);
       return FILE_R;
     }
-    // Sum of child areas → square-root for a packed-circle radius estimate
+    // Sum of child areas -> square-root for a packed-circle radius estimate
     let areaSum = 0;
     for (const k of kids) {
       const r = computeRadius(k);
@@ -139,10 +152,10 @@ function layoutRepoTree(graph: SigmaGraph): void {
     const kids = childrenOf.get(node) ?? [];
     if (kids.length === 0) return;
 
-    // Sort: big subtrees first → they claim outer slots
+    // Sort: big subtrees first -> they claim outer slots
     kids.sort((a, b) => (radiusOf.get(b) ?? FILE_R) - (radiusOf.get(a) ?? FILE_R));
 
-    // Sum of child circumference proportions → angle slots
+    // Sum of child circumference proportions -> angle slots
     const totalChildR = kids.reduce((s, k) => s + (radiusOf.get(k) ?? FILE_R), 0);
     // Ring radius: place each child far enough that its circle clears the hub
     const myR = radiusOf.get(node) ?? FOLDER_HUB;
@@ -163,7 +176,7 @@ function layoutRepoTree(graph: SigmaGraph): void {
   };
 
   // Place roots so total layout fits a roughly-square area, not a long arc.
-  // Use a simple grid-pack: rows × cols of root circles.
+  // Use a simple grid-pack: rows Ã— cols of root circles.
   roots.sort((a, b) => (radiusOf.get(b) ?? FILE_R) - (radiusOf.get(a) ?? FILE_R));
   const rootCount = roots.length;
   if (rootCount === 1) {
@@ -198,6 +211,155 @@ function layoutRepoTree(graph: SigmaGraph): void {
   });
 
   resolveOverlap(graph, 12);
+}
+
+function layoutRepoTreeBands(graph: SigmaGraph): void {
+  const childrenOf = new Map<string, Set<string>>();
+  const parents = new Map<string, string>();
+
+  const addChild = (parent: string, child: string): void => {
+    if (!graph.hasNode(parent) || !graph.hasNode(child) || parent === child) {
+      return;
+    }
+    if (!childrenOf.has(parent)) {
+      childrenOf.set(parent, new Set());
+    }
+    childrenOf.get(parent)!.add(child);
+    if (!parents.has(child)) {
+      parents.set(child, parent);
+    }
+  };
+
+  graph.forEachEdge((_e, attrs, source, target) => {
+    if (attrs.edgeType === "CONTAINS") {
+      addChild(source, target);
+    }
+  });
+
+  const folderIds = new Set<string>();
+  graph.forEachNode((node, attrs) => {
+    if (attrs.kind === "folder") {
+      folderIds.add(node);
+    }
+  });
+
+  for (const folderId of folderIds) {
+    if (parents.has(folderId)) {
+      continue;
+    }
+    const path = folderId.startsWith("folder:") ? folderId.slice("folder:".length) : folderId;
+    const lastSlash = path.lastIndexOf("/");
+    if (lastSlash <= 0) {
+      continue;
+    }
+    const parentId = `folder:${path.slice(0, lastSlash)}`;
+    if (folderIds.has(parentId)) {
+      addChild(parentId, folderId);
+    }
+  }
+
+  let roots: string[] = [];
+  graph.forEachNode((node) => {
+    if (!parents.has(node)) {
+      roots.push(node);
+    }
+  });
+  roots = roots.sort(compareRepoNodes(graph));
+  if (roots.length === 0) {
+    layoutConcentric(graph);
+    return;
+  }
+
+  const leafCounts = new Map<string, number>();
+  const countLeaves = (node: string, seen = new Set<string>()): number => {
+    const cached = leafCounts.get(node);
+    if (cached !== undefined) {
+      return cached;
+    }
+    if (seen.has(node)) {
+      return 1;
+    }
+    seen.add(node);
+    const kids = sortedRepoChildren(graph, childrenOf, node);
+    const count = kids.length === 0 ? 1 : kids.reduce((sum, child) => sum + countLeaves(child, new Set(seen)), 0);
+    leafCounts.set(node, count);
+    return count;
+  };
+  roots.forEach((root) => countLeaves(root));
+
+  const colGap = 260;
+  const rowGap = 54;
+  let cursor = 0;
+
+  const placeNode = (node: string, depth: number, seen = new Set<string>()): number => {
+    if (seen.has(node)) {
+      const y = cursor * rowGap;
+      cursor += 1;
+      graph.mergeNodeAttributes(node, { x: depth * colGap, y });
+      return y;
+    }
+    seen.add(node);
+    const kids = sortedRepoChildren(graph, childrenOf, node);
+    let y: number;
+    if (kids.length === 0) {
+      y = cursor * rowGap;
+      cursor += 1;
+    } else {
+      const childYs = kids.map((child) => placeNode(child, depth + 1, new Set(seen)));
+      y = (Math.min(...childYs) + Math.max(...childYs)) / 2;
+    }
+    const kind = graph.getNodeAttribute(node, "kind");
+    graph.mergeNodeAttributes(node, {
+      x: depth * colGap,
+      y,
+      size: kind === "folder" || kind === "repo" ? 10 : 5.8,
+    });
+    return y;
+  };
+
+  roots.forEach((root, index) => {
+    if (index > 0) {
+      cursor += 1;
+    }
+    placeNode(root, 0);
+  });
+
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  graph.forEachNode((_node, attrs) => {
+    minX = Math.min(minX, attrs.x);
+    maxX = Math.max(maxX, attrs.x);
+    minY = Math.min(minY, attrs.y);
+    maxY = Math.max(maxY, attrs.y);
+  });
+  const offsetX = (minX + maxX) / 2;
+  const offsetY = (minY + maxY) / 2;
+  graph.forEachNode((node, attrs) => {
+    graph.mergeNodeAttributes(node, { x: attrs.x - offsetX, y: attrs.y - offsetY });
+  });
+}
+
+function sortedRepoChildren(
+  graph: SigmaGraph,
+  childrenOf: Map<string, Set<string>>,
+  node: string,
+): string[] {
+  return Array.from(childrenOf.get(node) ?? []).sort(compareRepoNodes(graph));
+}
+
+function compareRepoNodes(graph: SigmaGraph): (a: string, b: string) => number {
+  return (a, b) => {
+    const aKind = graph.getNodeAttribute(a, "kind");
+    const bKind = graph.getNodeAttribute(b, "kind");
+    const aRank = aKind === "repo" ? 0 : aKind === "folder" ? 1 : 2;
+    const bRank = bKind === "repo" ? 0 : bKind === "folder" ? 1 : 2;
+    if (aRank !== bRank) {
+      return aRank - bRank;
+    }
+    return graph.getNodeAttribute(a, "label").localeCompare(graph.getNodeAttribute(b, "label"));
+  };
 }
 
 // =================================================================
@@ -266,7 +428,7 @@ function layoutSymbolsClustered(graph: SigmaGraph): void {
 }
 
 // =================================================================
-// Process: ordered horizontal flow (Route → Handler → Service → ...)
+// Process: ordered horizontal flow (Route -> Handler -> Service -> ...)
 // =================================================================
 function layoutProcessFlow(graph: SigmaGraph): void {
   // Order nodes by step number. Backend stores step in edge metadata.
@@ -341,6 +503,59 @@ function layoutProcessFlow(graph: SigmaGraph): void {
   });
 }
 
+// Focused local call graph: seed center, callers left, callees right.
+function layoutCalls(graph: SigmaGraph): void {
+  const seed = graph.nodes().find((node) => graph.getNodeAttribute(node, "focusRole") === "seed") ?? highestDegreeNode(graph);
+  if (!seed) {
+    layoutConcentric(graph);
+    return;
+  }
+
+  graph.mergeNodeAttributes(seed, { x: 0, y: 0, size: 13 });
+
+  const callers: string[] = [];
+  const callees: string[] = [];
+  const tests: string[] = [];
+  const routes: string[] = [];
+  const others: string[] = [];
+  const placed = new Set<string>([seed]);
+
+  graph.forEachDirectedEdge((_edge, attrs, source, target) => {
+    if (attrs.edgeType !== "CALLS" && attrs.edgeType !== "ACCESSES") {
+      return;
+    }
+    if (target === seed && !placed.has(source)) {
+      callers.push(source);
+      placed.add(source);
+    }
+    if (source === seed && !placed.has(target)) {
+      callees.push(target);
+      placed.add(target);
+    }
+  });
+
+  graph.forEachNode((node, attrs) => {
+    if (placed.has(node)) {
+      return;
+    }
+    if (attrs.kind === "test" || attrs.kind === "test_block") {
+      tests.push(node);
+    } else if (attrs.kind === "route") {
+      routes.push(node);
+    } else {
+      others.push(node);
+    }
+    placed.add(node);
+  });
+
+  placeColumn(graph, callers, -360, 360);
+  placeColumn(graph, callees, 360, 360);
+  placeRow(graph, routes, -260, 260, -260);
+  placeRow(graph, tests, -260, 260, 260);
+  placeRing(graph, others, 0, 0, 430);
+  resolveOverlap(graph, 4);
+}
+
 // =================================================================
 // Impact: target-centered blast radius
 // =================================================================
@@ -389,15 +604,7 @@ function layoutImpact(graph: SigmaGraph): void {
 // =================================================================
 function layoutConcentric(graph: SigmaGraph): void {
   // Pick highest-degree node as the seed
-  let seed: string | null = null;
-  let maxDeg = -1;
-  graph.forEachNode((n) => {
-    const d = graph.degree(n);
-    if (d > maxDeg) {
-      maxDeg = d;
-      seed = n;
-    }
-  });
+  const seed = graph.nodes().find((node) => graph.getNodeAttribute(node, "focusRole") === "seed") ?? highestDegreeNode(graph);
   if (!seed) {
     return;
   }
@@ -427,6 +634,19 @@ function layoutConcentric(graph: SigmaGraph): void {
   placeRing(graph, twoHop, 0, 0, 380);
   placeRing(graph, remainder, 0, 0, 540);
   resolveOverlap(graph, 4);
+}
+
+function highestDegreeNode(graph: SigmaGraph): string | null {
+  let seed: string | null = null;
+  let maxDeg = -1;
+  graph.forEachNode((n) => {
+    const d = graph.degree(n);
+    if (d > maxDeg) {
+      maxDeg = d;
+      seed = n;
+    }
+  });
+  return seed;
 }
 
 // =================================================================
@@ -460,7 +680,7 @@ function layoutClusteredForce(graph: SigmaGraph): void {
     });
   });
 
-  // One-shot FA2 to relax the seeded layout — deterministic because seeds are fixed
+  // One-shot FA2 to relax the seeded layout - deterministic because seeds are fixed
   const iterations = graph.order > 300 ? 80 : graph.order > 100 ? 140 : 200;
   forceAtlas2.assign(graph, {
     iterations,
@@ -523,6 +743,6 @@ function resolveOverlap(graph: SigmaGraph, iterations = 8): void {
       settings: { margin: 6, ratio: 1.05, speed: 4 },
     });
   } catch {
-    // ignore — overlap pass is best-effort
+    // ignore - overlap pass is best-effort
   }
 }

@@ -31,14 +31,14 @@ export function InspectorDrawer({
     <aside className={`inspector ${open ? "open" : "closed"}`}>
       {!open ? (
         <button type="button" className="inspector-open" onClick={() => setTab("Summary")}>
-          Inspector ▸
+          Inspector &gt;
         </button>
       ) : (
         <>
           <div className="inspector-header">
             <h3>Inspector</h3>
             <button type="button" onClick={onClose}>
-              ✕
+              x
             </button>
           </div>
           <p className="muted">{title}</p>
@@ -50,10 +50,10 @@ export function InspectorDrawer({
             ))}
           </div>
           <div className="inspector-body">
-            {loading ? <p className="muted">Loading…</p> : null}
+            {loading ? <p className="muted">Refreshing details...</p> : null}
             {error ? <p className="error">{error}</p> : null}
             {!loading && !error && details == null ? <p className="muted">Select a node, edge, process, or impact result.</p> : null}
-            {!loading && !error && details != null && tab === "Summary" ? (
+            {!error && details != null && tab === "Summary" ? (
               <div className="kv">
                 {Object.entries(summary).map(([key, value]) => (
                   <div className="kv-row" key={key}>
@@ -63,11 +63,11 @@ export function InspectorDrawer({
                 ))}
               </div>
             ) : null}
-            {!loading && !error && tab === "Relations" ? <RelationsView relations={relations} /> : null}
-            {!loading && !error && tab === "Process" ? <ProcessView details={details} relations={relations} /> : null}
-            {!loading && !error && tab === "Impact" ? <ImpactView details={details} /> : null}
-            {!loading && !error && tab === "Context" ? <ContextView details={details} /> : null}
-            {!loading && !error && tab === "Raw" && details != null ? <pre>{JSON.stringify(details, null, 2)}</pre> : null}
+            {!error && tab === "Relations" ? <RelationsView relations={relations} /> : null}
+            {!error && tab === "Process" ? <ProcessView details={details} relations={relations} /> : null}
+            {!error && tab === "Impact" ? <ImpactView details={details} /> : null}
+            {!error && tab === "Context" ? <ContextView details={details} /> : null}
+            {!error && tab === "Raw" && details != null ? <pre>{JSON.stringify(details, null, 2)}</pre> : null}
           </div>
         </>
       )}
@@ -83,22 +83,22 @@ function extractSummary(details: unknown): Record<string, unknown> {
   const node = asRecord.node && typeof asRecord.node === "object" ? (asRecord.node as Record<string, unknown>) : null;
   if (node) {
     return {
-      id: node.id ?? "—",
-      kind: node.kind ?? "—",
-      label: node.label ?? node.name ?? "—",
-      qname: node.qualified_name ?? "—",
-      file: node.file_path ?? "—",
+      id: node.id ?? "-",
+      kind: node.kind ?? "-",
+      label: node.label ?? node.name ?? "-",
+      qname: node.qualified_name ?? "-",
+      file: node.file_path ?? "-",
       lines:
         typeof node.start_line === "number" && typeof node.end_line === "number"
           ? `${node.start_line}-${node.end_line}`
-          : "—",
+          : "-",
     };
   }
   return {
     type: asRecord.type ?? asRecord.view ?? "selection",
-    source: asRecord.source ?? "—",
-    target: asRecord.target ?? "—",
-    confidence: asRecord.confidence ?? "—",
+    source: asRecord.source ?? "-",
+    target: asRecord.target ?? "-",
+    confidence: asRecord.confidence ?? "-",
   };
 }
 
@@ -172,7 +172,7 @@ function ImpactView({ details }: { details: unknown }) {
       {["target", "view", "node_count", "edge_count", "max_depth"].map((key) => (
         <div className="kv-row" key={key}>
           <span>{key}</span>
-          <strong>{String(metadata[key] ?? "—")}</strong>
+          <strong>{String(metadata[key] ?? "-")}</strong>
         </div>
       ))}
     </div>

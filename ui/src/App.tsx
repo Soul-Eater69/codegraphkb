@@ -63,8 +63,8 @@ const VIEW_CAPS: Record<GraphView, { maxNodes: number; maxEdges: number; nodeKin
     maxEdges: 260,
   },
   full: {
-    maxNodes: 0,
-    maxEdges: 0,
+    maxNodes: 5000,
+    maxEdges: 15000,
   },
 };
 
@@ -72,7 +72,7 @@ export default function App() {
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [graph, setGraph] = useState<GraphPayload | null>(null);
   const [perspective, setPerspective] = useState<Perspective>("none");
-  const [selectedView, setSelectedView] = useState<GraphView>("repo");
+  const [selectedView, setSelectedView] = useState<GraphView>("full");
   const [execution, setExecution] = useState<QueryExecution>(EMPTY_EXECUTION);
 
   const [query, setQuery] = useState("");
@@ -85,6 +85,7 @@ export default function App() {
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [highlightedNodeIds, setHighlightedNodeIds] = useState<Set<string>>(new Set());
 
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [detailsTitle, setDetailsTitle] = useState("Selection");
@@ -97,6 +98,7 @@ export default function App() {
   const [loadingTree, setLoadingTree] = useState(false);
   const [layoutStatus, setLayoutStatus] = useState<"frozen" | "running">("frozen");
   const [sceneNotice, setSceneNotice] = useState<string>("Choose a perspective or search for a symbol to start.");
+  const [pendingAutoPerspective, setPendingAutoPerspective] = useState<Perspective | null>(null);
 
   const [errorGraph, setErrorGraph] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
@@ -107,7 +109,38 @@ export default function App() {
     void loadSummary();
     void loadProcesses();
     void loadFileTree();
+    void executeView("full");
   }, []);
+
+  useEffect(() => {
+    if (pendingAutoPerspective === "symbols") {
+      const firstFile = findFirstFile(fileTree);
+      if (firstFile) {
+        setPendingAutoPerspective(null);
+        void executeFileSymbols(firstFile.path);
+      }
+    }
+    if (pendingAutoPerspective === "processes" && processes.length > 0) {
+      setPendingAutoPerspective(null);
+      void selectProcess(processes[0]);
+    }
+  }, [fileTree, pendingAutoPerspective, processes]);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2 || /^(repo|full|overview|processes|impact|neighborhood)\b/i.test(q)) {
+      if (q.length === 0) {
+        setSearchResults([]);
+      }
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void searchNodes(q.replace(/^search\s+/i, "")).then((result) => {
+        setSearchResults(result.results);
+      }).catch(() => undefined);
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
   const nodeKindCounts = useMemo(() => counts(graph?.nodes.map((n) => n.kind) ?? []), [graph]);
   const edgeTypeCounts = useMemo(() => counts(graph?.edges.map((e) => e.type) ?? []), [graph]);
@@ -145,37 +178,33 @@ export default function App() {
   }
 
   async function executeView(view: GraphView) {
-    if (view === "full") {
-      setErrorGraph("Full graph is disabled in the UI. Use focused perspectives.");
-      return;
-    }
     if (view === "symbols") {
-      setGraph(null);
-      setPerspective("symbols");
-      setExecution({ perspective: "symbols", view: "symbols" });
-      setSceneNotice("Symbols view requires a selected file or search result.");
-      return;
-    }
-    if (view === "calls") {
-      setGraph(null);
-      setPerspective("calls");
-      setExecution({ perspective: "calls", view: "calls" });
-      setSceneNotice("Call graph requires a selected symbol. Search and select a symbol first.");
-      return;
-    }
-    if (view === "framework") {
-      setGraph(null);
-      setPerspective("framework");
-      setExecution({ perspective: "framework", view: "framework" });
-      setSceneNotice("Framework view requires selecting a route/test/model target first.");
-      return;
+      const firstFile = findFirstFile(fileTree);
+      if (firstFile) {
+        await selectSearchResult({
+          id: `file:${firstFile.path}`,
+          label: firstFile.path,
+          kind: "file",
+          file_path: firstFile.path,
+        });
+        return;
+      }
+      if (loadingTree) {
+        setPendingAutoPerspective("symbols");
+        showScopedEmpty("symbols", "Loading file tree, then the first file symbol scope will open.");
+        return;
+      }
     }
     if (view === "processes") {
-      setGraph(null);
-      setPerspective("processes");
-      setExecution({ perspective: "processes", view: "processes" });
-      setSceneNotice("Select one process from the left panel to render an ordered flow.");
-      return;
+      if (processes.length > 0) {
+        await selectProcess(processes[0]);
+        return;
+      }
+      if (loadingProcesses) {
+        setPendingAutoPerspective("processes");
+        showScopedEmpty("processes", "Loading process flows, then the first process will open.");
+        return;
+      }
     }
     setLoadingGraph(true);
     setErrorGraph(null);
@@ -242,6 +271,15 @@ export default function App() {
     }
   }
 
+  function showScopedEmpty(nextPerspective: Perspective, notice: string) {
+    setGraph(null);
+    setPerspective(nextPerspective);
+    setExecution({ perspective: nextPerspective });
+    setSceneNotice(notice);
+    setErrorGraph(null);
+    clearSelection();
+  }
+
   async function executeImpact(target: string) {
     setLoadingGraph(true);
     setErrorGraph(null);
@@ -284,11 +322,15 @@ export default function App() {
 
   async function selectSearchResult(result: SearchResult) {
     const nodeId = result.id;
+    setSearchResults([]);
+    setHighlightedNodeIds(new Set([nodeId]));
+    if (nodeId.startsWith("file:")) {
+      await executeFileSymbols(nodeId.slice("file:".length));
+      return;
+    }
     if (!nodeInGraph(nodeId)) {
       if (nodeId.startsWith("symbol:")) {
         await executeNeighborhood(nodeId, "calls");
-      } else if (nodeId.startsWith("file:")) {
-        await executeNeighborhood(nodeId, "symbols");
       } else if (nodeId.startsWith("process:")) {
         await executeNeighborhood(nodeId, "processes");
       } else {
@@ -299,6 +341,68 @@ export default function App() {
     setSelectedNodeId(nodeId);
     setSelectedEdgeId(null);
     await loadNodeDetails(nodeId);
+  }
+
+  async function executeFileSymbols(filePath: string) {
+    const nodeId = `file:${filePath}`;
+    setLoadingGraph(true);
+    setErrorGraph(null);
+    setPerspective("symbols");
+    setExecution({ perspective: "symbols", target: filePath });
+    setSceneNotice("");
+    try {
+      const fileDetails = await getNode(nodeId);
+      const relationships = fileDetails.relationships;
+      const symbols = Array.isArray(relationships?.symbols)
+        ? (relationships.symbols as Array<Record<string, unknown>>)
+        : [];
+      const symbolNodes = symbols.slice(0, 199).map((sym, index) => ({
+        id: String(sym.id ?? `symbol:${filePath}:${index}`),
+        label: String(sym.label ?? sym.name ?? sym.id ?? `symbol-${index}`),
+        kind: String(sym.kind ?? "function"),
+        file_path: filePath,
+        start_line: typeof sym.start_line === "number" ? sym.start_line : undefined,
+        end_line: typeof sym.end_line === "number" ? sym.end_line : undefined,
+        metadata: sym,
+      }));
+      const payload: GraphPayload = {
+        metadata: {
+          view: "symbols",
+          target: filePath,
+          node_count: 1 + symbolNodes.length,
+          edge_count: symbolNodes.length,
+        },
+        nodes: [
+          {
+            id: nodeId,
+            label: filePath.split("/").pop() ?? filePath,
+            kind: "file",
+            file_path: filePath,
+          },
+          ...symbolNodes,
+        ],
+        edges: symbolNodes.map((node, index) => ({
+          id: `contains:${filePath}:${index}`,
+          source: nodeId,
+          target: node.id,
+          type: "CONTAINS",
+          confidence: 1,
+          precision_level: 3,
+        })),
+      };
+      setGraph(payload);
+      setSelectedNodeId(nodeId);
+      setHighlightedNodeIds(new Set([nodeId]));
+      setSelectedEdgeId(null);
+      setDetails(fileDetails);
+      setRelations((relationships ?? {}) as NodeRelations);
+      setDetailsTitle(`File: ${filePath}`);
+      setInspectorOpen(true);
+    } catch (err) {
+      setErrorGraph(asError(err));
+    } finally {
+      setLoadingGraph(false);
+    }
   }
 
   async function loadNodeDetails(nodeId: string) {
@@ -345,6 +449,10 @@ export default function App() {
   function clearSelection() {
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
+    setHighlightedNodeIds(new Set());
+    setRelations(null);
+    setDetails(null);
+    setInspectorOpen(false);
   }
 
   function toggleNodeKind(kind: string) {
@@ -379,30 +487,14 @@ export default function App() {
         }}
         execution={execution}
         layoutStatus={layoutStatus}
+        searchResults={searchResults}
+        onSelectSearchResult={(result) => void selectSearchResult(result)}
       />
 
       <div className="main-layout">
         <LeftRail>
           <GraphInfoPanel summary={summary} />
-          <PerspectivesPanel
-            active={perspective}
-            onAction={(action) => {
-              if (action === "repo" || action === "processes") {
-                void executeView(action);
-                return;
-              }
-              setGraph(null);
-              setPerspective(action);
-              setExecution({ perspective: action });
-              if (action === "calls") {
-                setSceneNotice("Call graph requires a selected symbol. Search first.");
-              } else if (action === "symbols") {
-                setSceneNotice("Symbols view requires a selected file or symbol.");
-              } else {
-                setSceneNotice("Framework view requires a focused entrypoint selection.");
-              }
-            }}
-          />
+          <PerspectivesPanel active={perspective} onAction={(action) => void executeView(action)} />
           <FilterPanel
             nodeKinds={nodeKindCounts}
             edgeTypes={edgeTypeCounts}
@@ -450,9 +542,16 @@ export default function App() {
           selectedEdgeTypes={selectedEdgeTypes}
           selectedNodeId={selectedNodeId}
           selectedEdgeId={selectedEdgeId}
+          highlightedNodeIds={highlightedNodeIds}
           onNodeClick={(nodeId) => {
             setSelectedNodeId(nodeId);
             setSelectedEdgeId(null);
+            setHighlightedNodeIds(new Set());
+            const graphNode = graph?.nodes.find((node) => node.id === nodeId);
+            setDetailsTitle(`Node: ${graphNode?.label ?? nodeId}`);
+            setDetails(graphNode ? { node: graphNode } : { node: { id: nodeId } });
+            setRelations(null);
+            setInspectorOpen(true);
             void loadNodeDetails(nodeId);
           }}
           onEdgeClick={(edgeId, edgePayload) => {
@@ -465,20 +564,7 @@ export default function App() {
           }}
           onStageClick={clearSelection}
           onQuickAction={(action) => {
-            if (action === "repo" || action === "processes") {
-              void executeView(action);
-              return;
-            }
-            setGraph(null);
-            setPerspective(action);
-            setExecution({ perspective: action });
-            if (action === "calls") {
-              setSceneNotice("Use search to select a symbol, then explore its call neighborhood.");
-            } else if (action === "symbols") {
-              setSceneNotice("Select a file from the file tree or search a symbol to scope Symbols view.");
-            } else {
-              setSceneNotice("Select a route/test/model target first to open a bounded Framework view.");
-            }
+            void executeView(action);
           }}
           onLayoutStatusChange={setLayoutStatus}
         />
@@ -519,4 +605,40 @@ function toggleFilter(source: Set<string>, value: string): Set<string> {
 
 function asError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function findFirstFile(node: FileTreeNode | null): FileTreeNode | null {
+  return findFirstFileWithSymbols(node) ?? findFirstFileAny(node);
+}
+
+function findFirstFileWithSymbols(node: FileTreeNode | null): FileTreeNode | null {
+  if (!node) {
+    return null;
+  }
+  if (node.type === "file") {
+    return (node.symbol_count ?? 0) > 0 ? node : null;
+  }
+  for (const child of node.children ?? []) {
+    const found = findFirstFileWithSymbols(child);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+
+function findFirstFileAny(node: FileTreeNode | null): FileTreeNode | null {
+  if (!node) {
+    return null;
+  }
+  if (node.type === "file") {
+    return node;
+  }
+  for (const child of node.children ?? []) {
+    const found = findFirstFileAny(child);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
 }

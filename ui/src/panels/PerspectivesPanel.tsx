@@ -2,10 +2,11 @@ import type { Perspective } from "../types/graph";
 
 interface PerspectivesPanelProps {
   active: Perspective;
-  onAction: (action: "repo" | "processes" | "calls" | "symbols" | "framework") => void;
+  onAction: (action: "full" | "repo" | "processes" | "calls" | "symbols" | "framework") => void;
 }
 
-const options: Array<{ label: string; action: "repo" | "processes" | "calls" | "symbols" | "framework"; needsTarget?: boolean }> = [
+const options: Array<{ label: string; action: "full" | "repo" | "processes" | "calls" | "symbols" | "framework"; needsTarget?: boolean }> = [
+  { label: "Overview", action: "full" },
   { label: "Repo Map", action: "repo" },
   { label: "Processes", action: "processes" },
   { label: "Call Graph", action: "calls", needsTarget: true },

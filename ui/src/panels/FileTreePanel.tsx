@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import type { FileTreeNode } from "../types/graph";
 
 interface FileTreePanelProps {
@@ -8,12 +9,21 @@ interface FileTreePanelProps {
 }
 
 export function FileTreePanel({ tree, loading, error, onSelectFile }: FileTreePanelProps) {
+  const [query, setQuery] = useState("");
+  const filteredTree = useMemo(() => filterTree(tree, query), [tree, query]);
+
   return (
     <section className="panel">
       <h3>File Tree</h3>
+      <input
+        className="panel-search"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="Search files..."
+      />
       {loading ? <p className="muted">Loading tree...</p> : null}
       {error ? <p className="error">{error}</p> : null}
-      {!loading && !error && tree ? <div className="tree-root">{renderNode(tree, onSelectFile)}</div> : null}
+      {!loading && !error && filteredTree ? <div className="tree-root">{renderNode(filteredTree, onSelectFile)}</div> : null}
     </section>
   );
 }
@@ -41,4 +51,24 @@ function renderNode(node: FileTreeNode, onSelectFile: (path: string) => void, de
       </div>
     </details>
   );
+}
+
+function filterTree(node: FileTreeNode | null, query: string): FileTreeNode | null {
+  if (!node) {
+    return null;
+  }
+  const needle = query.trim().toLowerCase();
+  if (!needle) {
+    return node;
+  }
+  if (node.type === "file") {
+    return node.name.toLowerCase().includes(needle) || node.path.toLowerCase().includes(needle) ? node : null;
+  }
+  const children = (node.children ?? [])
+    .map((child) => filterTree(child, needle))
+    .filter((child): child is FileTreeNode => child != null);
+  if (children.length > 0 || node.name.toLowerCase().includes(needle) || node.path.toLowerCase().includes(needle)) {
+    return { ...node, children };
+  }
+  return null;
 }
