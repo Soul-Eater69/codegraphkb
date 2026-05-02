@@ -25,6 +25,7 @@ llm = ["anthropic>=0.40.0"]
 api = ["fastapi>=0.110", "uvicorn>=0.27"]
 parser = ["tree-sitter>=0.22", "tree-sitter-language-pack>=0.7"]
 embeddings = ["numpy>=1.26", "fastembed>=0.3"]
+neo4j = ["neo4j>=5.20"]
 all = [
     "anthropic>=0.40.0",
     "fastapi>=0.110",
@@ -33,6 +34,7 @@ all = [
     "tree-sitter-language-pack>=0.7",
     "numpy>=1.26",
     "fastembed>=0.3",
+    "neo4j>=5.20",
 ]
 dev = ["pytest>=7"]
 

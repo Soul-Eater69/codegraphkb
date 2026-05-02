@@ -12,6 +12,10 @@ from codegraphkb.core.exporters.graph_exporter import (
 )
 from codegraphkb.core.exporters.html_renderer import render_graph_html
 from codegraphkb.core.exporters.impact_exporter import export_impact_graph
+from codegraphkb.core.exporters.neo4j_exporter import (
+    prepare_neo4j_rows,
+    push_graph_to_neo4j,
+)
 from codegraphkb.core.exporters.process_exporter import export_processes
 
 __all__ = [
@@ -26,4 +30,6 @@ __all__ = [
     "render_graph_html",
     "export_processes",
     "export_impact_graph",
+    "prepare_neo4j_rows",
+    "push_graph_to_neo4j",
 ]

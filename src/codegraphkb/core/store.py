@@ -103,6 +103,18 @@ CREATE TABLE IF NOT EXISTS embeddings (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_embeddings_model ON embeddings(model);
+
+CREATE TABLE IF NOT EXISTS object_roles (
+    id TEXT PRIMARY KEY,
+    node_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    signals_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_object_roles_node ON object_roles(node_id);
+CREATE INDEX IF NOT EXISTS idx_object_roles_role ON object_roles(role);
 """
 
 
@@ -491,6 +503,44 @@ class GraphStore:
         ).fetchone()
         return _row_to_symbol(row)
 
+    # ---------- object roles ----------
+    def replace_object_roles(self, roles: Iterable[tuple]) -> None:
+        """Replace inferred object roles with stable, auditable rows."""
+        rows = list(roles)
+        with self.transaction() as cx:
+            cx.execute("DELETE FROM object_roles")
+            if rows:
+                cx.executemany(
+                    "INSERT INTO object_roles(id, node_id, role, confidence, reason, "
+                    "signals_json, created_at) VALUES (?,?,?,?,?,?,?)",
+                    rows,
+                )
+
+    def roles_for_node(self, node_id: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT role, confidence, reason, signals_json, created_at "
+            "FROM object_roles WHERE node_id=? "
+            "ORDER BY confidence DESC, role",
+            (node_id,),
+        ).fetchall()
+        return [_object_role_row_to_dict(r) for r in rows]
+
+    def object_roles_by_node(self) -> dict[str, list[dict]]:
+        rows = self._conn.execute(
+            "SELECT node_id, role, confidence, reason, signals_json, created_at "
+            "FROM object_roles ORDER BY node_id, confidence DESC, role"
+        ).fetchall()
+        out: dict[str, list[dict]] = {}
+        for row in rows:
+            out.setdefault(row["node_id"], []).append(_object_role_row_to_dict(row))
+        return out
+
+    def object_role_counts(self) -> dict[str, int]:
+        rows = self._conn.execute(
+            "SELECT role, COUNT(*) AS n FROM object_roles GROUP BY role"
+        ).fetchall()
+        return {r["role"]: int(r["n"]) for r in rows}
+
 
 def _row_to_symbol(row: sqlite3.Row | None) -> SymbolRow | None:
     if row is None:
@@ -553,3 +603,17 @@ def _normalize_edge_row(row: tuple, created_at: str) -> tuple:
             at or created_at,
         )
     raise ValueError(f"Expected edge row with 7 or 12 fields, got {len(row)}")
+
+
+def _object_role_row_to_dict(row: sqlite3.Row) -> dict:
+    try:
+        signals = json.loads(row["signals_json"]) if row["signals_json"] else []
+    except (TypeError, json.JSONDecodeError, KeyError):
+        signals = []
+    return {
+        "role": row["role"],
+        "confidence": float(row["confidence"] or 0.0),
+        "reason": row["reason"] or "",
+        "signals": signals,
+        "created_at": row["created_at"] or "",
+    }

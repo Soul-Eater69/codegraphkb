@@ -699,3 +699,132 @@ Console error capture returned zero errors on the stability2 smoke
 2) Add a real Playwright regression for node click -> inspector summary.
 3) Add a deterministic screenshot/snapshot check for Overview so visual regressions are caught quickly.
 ```
+
+## Handoff - 2026-05-01 21:01 America/Chicago
+
+### Phase
+phase4/neo4j-graph-verification
+
+### Agent
+Codex
+
+### Task
+Added a local Neo4j verification path after the user reported route/framework/call/symbol graph scenes looked wrong and asked to verify raw graph data outside the UI.
+
+### Files Changed
+- `docker-compose.neo4j.yml`
+- `docs/neo4j_verification.md`
+- `pyproject.toml`
+- `src/codegraphkb/api.py`
+- `src/codegraphkb/cli.py`
+- `src/codegraphkb/core/exporters/__init__.py`
+- `src/codegraphkb/core/exporters/graph_exporter.py`
+- `src/codegraphkb/core/exporters/neo4j_exporter.py`
+- `tests/test_neo4j_exporter.py`
+- `ui/src/graph/graphStyles.ts`
+
+### Commands Run
+```bash
+docker compose -f docker-compose.neo4j.yml config
+docker compose -f docker-compose.neo4j.yml up -d
+py -3 -m codegraphkb export neo4j --repo . --view full --clear --json
+py -3 -m codegraphkb export neo4j --help
+py -3 -c "<neo4j count queries>"
+cd ui && npm run build
+```
+
+### Tests Run
+```bash
+py -3 -m pytest tests\test_neo4j_exporter.py tests\test_exporters.py --basetemp=.pytest_tmp_neo4j_run
+```
+
+### What Passed
+- Targeted pytest suite passed: 7 passed.
+- Frontend build passed after adding `ROUTES_TO` edge color.
+- Docker Compose Neo4j config is valid.
+- Local Neo4j container started on ports 7474 and 7687.
+- Full graph export pushed successfully to Neo4j:
+  - 663 nodes
+  - 1015 relationships
+  - 0 skipped edges
+- Neo4j counts matched the exporter counts.
+- Framework exporter now includes `ROUTES_TO`; this repo's framework view includes:
+  - `TESTS`: 25
+  - `TESTS_SYMBOL`: 25
+  - `ROUTES_TO`: 6
+  - `ROUTE_HANDLED_BY`: 2
+
+### What Failed / Blocked
+- The raw graph reveals duplicate route concepts: syntax route nodes such as `route::GET /health` and framework route nodes such as `fastapi::GET /health`. They are connected, but split across duplicate route nodes. This is a graph modeling/export normalization issue, not just a UI layout issue.
+- Existing permission-denied temp directories still make plain `git status` noisy in this workspace.
+
+### Next Recommended Step
+```text
+1) Add route canonicalization so `route::GET /x` and `fastapi::GET /x` collapse into one route node in exported/UI graphs.
+2) Rebuild framework view around route -> handler -> calls/query/external columns after canonicalization.
+3) Revisit UI layouts only after Neo4j confirms route/call/symbol relationships are semantically correct.
+```
+
+## Handoff - 2026-05-01 22:35 America/Chicago
+
+### Phase
+schema-v4-object-roles
+
+### Agent
+Codex
+
+### Task
+Implemented the object-role graph layer so CodeGraphKB can infer auditable roles such as handler, service, repository, client, model, config, fixture, and test above raw syntax node kinds.
+
+### Files Changed
+- `src/codegraphkb/core/roles.py`
+- `src/codegraphkb/core/store.py`
+- `src/codegraphkb/core/migrations.py`
+- `src/codegraphkb/core/indexer.py`
+- `src/codegraphkb/core/graph_schema.py`
+- `src/codegraphkb/versioning.py`
+- `src/codegraphkb/api.py`
+- `src/codegraphkb/cli.py`
+- `src/codegraphkb/diagnostics.py`
+- `src/codegraphkb/server/ui_server.py`
+- `src/codegraphkb/core/exporters/graph_exporter.py`
+- `src/codegraphkb/core/exporters/impact_exporter.py`
+- `src/codegraphkb/core/exporters/neo4j_exporter.py`
+- `tests/test_object_roles.py`
+- `docs/agent_handoff.md`
+
+### Commands Run
+```bash
+py -3 -m pytest tests\test_object_roles.py -q -x --tb=short --basetemp=.pytest_tmp_roles_run2
+py -3 -m pytest tests\test_object_roles.py tests\test_neo4j_exporter.py tests\test_exporters.py -q --tb=short --basetemp=.pytest_tmp_roles_run3
+py -3 -m pytest tests\test_ui_api.py -q --tb=short --basetemp=.pytest_tmp_ui_roles
+git status --short
+```
+
+### Tests Run
+```bash
+tests/test_object_roles.py
+tests/test_neo4j_exporter.py
+tests/test_exporters.py
+tests/test_ui_api.py
+```
+
+### What Passed
+- Role tests passed: 3 passed.
+- Role + exporter regression passed: 10 passed.
+- UI API regression passed: 7 passed.
+- Indexing now writes `object_roles` rows after semantic/process passes.
+- `codegraph stats` / doctor / `/api/summary` expose role counts.
+- `/api/node/{id}` exposes node roles with confidence, reason, and signals.
+- JSON, impact, and Neo4j exports include primary role and role metadata.
+- Neo4j export now also adds role labels such as `CodeGraphRoleService`.
+
+### What Failed / Blocked
+- First pytest run inside the sandbox hit a Windows temp-directory permission cleanup error; rerunning pytest with approved elevated execution passed.
+
+### Next Recommended Step
+```text
+1) Re-index this repo and push to Neo4j again so Browser shows CodeGraphRole* labels and role properties.
+2) Add route canonicalization so duplicate `route::...` / `fastapi::...` route nodes collapse before UI/export.
+3) Use roles in the UI layouts: handlers/routes/processes/services/repositories should drive framework and impact scenes.
+```

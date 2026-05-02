@@ -37,6 +37,7 @@ _CALL_EDGE_TYPES = (
 
 _FRAMEWORK_EDGE_TYPES = (
     "HANDLES_ROUTE",
+    "ROUTES_TO",
     "ROUTE_HANDLED_BY",
     "TESTS",
     "TESTS_SYMBOL",
@@ -171,6 +172,8 @@ def export_graph(
             key=lambda e: (-float(e.get("confidence", 0.0)), int(e.get("precision_level", 1))),
         )[:max_edges]
 
+    _attach_roles(store, nodes)
+
     return {
         "metadata": _metadata(store, view, repo_path, len(nodes), len(edges)),
         "nodes": list(nodes.values()),
@@ -280,6 +283,8 @@ def _export_processes_view(
     if max_edges is not None and len(edges) > max_edges:
         edges = edges[:max_edges]
 
+    _attach_roles(store, nodes)
+
     return {
         "metadata": _metadata(store, VIEW_PROCESSES, repo_path, len(nodes), len(edges)),
         "nodes": list(nodes.values()),
@@ -328,6 +333,24 @@ def _metadata(
         "edge_count": edge_count,
         "indexed_at": store.get_meta("last_indexed_at") or "",
     }
+
+
+def _attach_roles(store: GraphStore, nodes: dict[str, dict[str, Any]]) -> None:
+    roles_by_node = store.object_roles_by_node()
+    for node_id, node in nodes.items():
+        roles = roles_by_node.get(node_id)
+        if not roles:
+            continue
+        primary = roles[0]
+        node["role"] = primary["role"]
+        node["role_confidence"] = primary["confidence"]
+        metadata = node.setdefault("metadata", {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+            node["metadata"] = metadata
+        metadata["roles"] = roles
+        metadata["role"] = primary["role"]
+        metadata["role_confidence"] = primary["confidence"]
 
 
 def _file_rows(store: GraphStore) -> list[dict[str, Any]]:

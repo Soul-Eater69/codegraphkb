@@ -66,6 +66,21 @@ def _run_process_pass(store, stats, progress) -> None:
         progress(f"processes: {summary}")
 
 
+def _run_role_pass(store, stats, progress) -> None:
+    from codegraphkb.core.roles import classify_roles, object_roles_to_rows, role_counts
+
+    if progress:
+        progress("classifying object roles")
+    roles = classify_roles(store)
+    store.replace_object_roles(object_roles_to_rows(roles))
+    stats.roles_built = len(roles)
+    stats.roles_by_type = role_counts(roles)
+    store.set_meta("object_roles_built", str(len(roles)))
+    if progress and roles:
+        summary = ", ".join(f"{k}={v}" for k, v in sorted(stats.roles_by_type.items()))
+        progress(f"roles: {summary}")
+
+
 def _run_typescript_semantic_pass(store, config, stats, progress) -> None:
     from codegraphkb.core.semantic.adapter_runner import run_semantic_adapter
     from codegraphkb.core.semantic.merge import merge_semantic_result
@@ -137,6 +152,8 @@ class IndexStats:
     semantic_backends: dict[str, dict] = None  # type: ignore[assignment]
     processes_built: int = 0
     processes_by_type: dict[str, int] = None  # type: ignore[assignment]
+    roles_built: int = 0
+    roles_by_type: dict[str, int] = None  # type: ignore[assignment]
 
     def __post_init__(self):
         if self.parser_backends is None:
@@ -145,6 +162,8 @@ class IndexStats:
             self.semantic_backends = {}
         if self.processes_by_type is None:
             self.processes_by_type = {}
+        if self.roles_by_type is None:
+            self.roles_by_type = {}
 
 
 def index_repository(config: IndexConfig, force: bool = False,
@@ -335,6 +354,9 @@ def index_repository(config: IndexConfig, force: bool = False,
 
         # Phase 3.3 — process map build.
         _run_process_pass(store, stats, progress)
+
+        # Schema v4 — auditable object roles above raw syntax kinds.
+        _run_role_pass(store, stats, progress)
 
         store.set_meta("last_indexed_at", now)
         store.set_meta("repo_path", str(config.repo_path))

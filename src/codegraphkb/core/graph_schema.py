@@ -1,4 +1,4 @@
-"""Graph schema v3 names and precision levels.
+"""Graph schema v4 names and precision levels.
 
 The store still accepts string kinds/edge types for backward compatibility, but
 new production-engine code should import these enums instead of spelling graph
@@ -9,7 +9,7 @@ from __future__ import annotations
 from enum import IntEnum, StrEnum
 
 
-GRAPH_SCHEMA_VERSION = 3
+GRAPH_SCHEMA_VERSION = 4
 
 
 class PrecisionLevel(IntEnum):

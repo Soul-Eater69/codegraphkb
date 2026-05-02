@@ -105,6 +105,9 @@ def index_cmd(repo: str, force: bool, force_parser_refresh: bool, quiet: bool,
     if stats.processes_built:
         by_type = ", ".join(f"{k}={v}" for k, v in stats.processes_by_type.items())
         click.echo(f"  Processes:   {stats.processes_built}  ({by_type})")
+    if stats.roles_built:
+        by_role = ", ".join(f"{k}={v}" for k, v in sorted(stats.roles_by_type.items()))
+        click.echo(f"  Roles:       {stats.roles_built}  ({by_role})")
     click.echo(f"  Report:      {kb.config.report_path}")
 
 
@@ -136,6 +139,10 @@ def doctor_cmd(repo: str, as_json: bool) -> None:
     click.echo(f"  Indexed files:             {report['indexed_file_count']}")
     click.echo(f"  Symbols:                   {report['symbol_count']}")
     click.echo(f"  Edges:                     {report['edge_count']}")
+    if report.get("role_counts"):
+        click.echo(f"  Object roles:              " + ", ".join(
+            f"{role}={count}" for role, count in sorted(report["role_counts"].items())
+        ))
     click.echo(f"  Stale files for parser:    {report['stale_file_count']}")
     if report["stale_files_for_parser"]:
         for p in report["stale_files_for_parser"]:
@@ -154,6 +161,7 @@ def stats_cmd(repo: str, as_json: bool, object_types: bool) -> None:
     s = kb.stats()
     if object_types:
         s["object_types"] = kb.object_type_counts()
+        s["roles"] = kb.object_role_counts()
         s["frameworks"] = kb.detected_frameworks()
         s["framework_objects"] = kb.framework_object_counts()
     if as_json:
@@ -184,6 +192,11 @@ def stats_cmd(repo: str, as_json: bool, object_types: bool) -> None:
             for label, n in s["framework_objects"].items():
                 if n:
                     click.echo(f"  {label:<24} {n}")
+        if s.get("roles"):
+            click.echo()
+            click.echo(click.style("Object roles", bold=True))
+            for role, n in sorted(s["roles"].items(), key=lambda kv: kv[1], reverse=True):
+                click.echo(f"  {role:<24} {n}")
 
 
 # ---------- query ----------
@@ -781,6 +794,65 @@ def export_impact_cmd(target: str, repo: str, fmt: str, out: str) -> None:
     else:
         render_graph_html(payload, out=out_path, title=f"CodeGraphKB Impact: {target}")
     click.echo(str(out_path))
+
+
+@export_group.command("neo4j", help="Push an exported graph view into a local Neo4j database.")
+@click.option("--repo", "repo", type=click.Path(file_okay=False, exists=True), default=".")
+@click.option("--view", type=click.Choice(
+    ["full", "repo", "symbols", "calls", "processes", "framework"]),
+    default="full", show_default=True)
+@click.option("--uri", default="bolt://localhost:7687", show_default=True,
+              envvar="NEO4J_URI")
+@click.option("--user", default="neo4j", show_default=True, envvar="NEO4J_USER")
+@click.option("--password", default="codegraphkb", show_default=True,
+              envvar="NEO4J_PASSWORD")
+@click.option("--database", default=None, envvar="NEO4J_DATABASE",
+              help="Neo4j database name. Defaults to Neo4j's configured default.")
+@click.option("--clear/--no-clear", default=True, show_default=True,
+              help="Delete existing CodeGraphKB nodes before importing.")
+@click.option("--batch-size", type=int, default=500, show_default=True)
+@click.option("--max-nodes", type=int, default=None)
+@click.option("--max-edges", type=int, default=None)
+@click.option("--json", "as_json", is_flag=True)
+def export_neo4j_cmd(repo: str, view: str, uri: str, user: str, password: str,
+                     database: str | None, clear: bool, batch_size: int,
+                     max_nodes: int | None, max_edges: int | None,
+                     as_json: bool) -> None:
+    kb = CodeGraphKB(repo)
+    try:
+        result = kb.export_neo4j(
+            view=view,
+            uri=uri,
+            user=user,
+            password=password,
+            database=database,
+            clear=clear,
+            batch_size=batch_size,
+            max_nodes=max_nodes,
+            max_edges=max_edges,
+        )
+    except RuntimeError as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
+
+    if as_json:
+        click.echo(json.dumps(result, indent=2))
+        return
+
+    imported = result["imported"]
+    db_counts = result["database_counts"]
+    click.echo(click.style("Neo4j export complete", bold=True, fg="green"))
+    click.echo(f"  URI:           {result['uri']}")
+    click.echo(f"  View:          {result['input']['view']}")
+    click.echo(f"  Nodes:         {imported['nodes']}  (Neo4j count: {db_counts['nodes']})")
+    click.echo(
+        f"  Relationships: {imported['relationships']}  "
+        f"(Neo4j count: {db_counts['relationships']})"
+    )
+    if imported["skipped_edges"]:
+        click.echo(click.style(f"  Skipped edges: {imported['skipped_edges']}", fg="yellow"))
+    click.echo("  Browser:       http://localhost:7474")
+    click.echo("  Login:         neo4j / codegraphkb")
 
 
 # ---------- servers ----------

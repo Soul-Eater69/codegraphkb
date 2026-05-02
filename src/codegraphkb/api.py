@@ -223,6 +223,7 @@ class CodeGraphKB:
                 "edges": store.edge_count(),
                 "embeddings": store.embedding_count(),
                 "languages": store.file_languages(),
+                "roles": store.object_role_counts(),
                 "last_indexed_at": store.get_meta("last_indexed_at"),
                 "schema_version": store.get_meta("schema_version"),
                 "capsule_version": store.get_meta("capsule_version"),
@@ -247,6 +248,14 @@ class CodeGraphKB:
                 "SELECT kind, COUNT(*) AS n FROM symbols GROUP BY kind"
             ).fetchall()
             return {r["kind"]: int(r["n"]) for r in rows}
+        finally:
+            store.close()
+
+    def object_role_counts(self) -> dict[str, int]:
+        """Schema v4 — break down inferred object roles by role name."""
+        store = self._open_store()
+        try:
+            return store.object_role_counts()
         finally:
             store.close()
 
@@ -364,6 +373,29 @@ class CodeGraphKB:
             )
         finally:
             store.close()
+
+    def export_neo4j(self, *,
+                     view: str = "full",
+                     uri: str = "bolt://localhost:7687",
+                     user: str = "neo4j",
+                     password: str = "codegraphkb",
+                     database: str | None = None,
+                     clear: bool = True,
+                     batch_size: int = 500,
+                     max_nodes: int | None = None,
+                     max_edges: int | None = None) -> dict:
+        from codegraphkb.core.exporters import push_graph_to_neo4j
+
+        payload = self.export_graph(view=view, max_nodes=max_nodes, max_edges=max_edges)
+        return push_graph_to_neo4j(
+            payload,
+            uri=uri,
+            user=user,
+            password=password,
+            database=database,
+            clear=clear,
+            batch_size=batch_size,
+        )
 
     def find_symbol(self, name: str) -> list[SymbolRow]:
         store = self._open_store()

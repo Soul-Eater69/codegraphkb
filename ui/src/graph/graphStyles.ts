@@ -54,6 +54,7 @@ export const EDGE_COLORS: Record<string, string> = {
   IMPLEMENTS: "#6b381f",
   EXTENDS: "#6b381f",
   HANDLES_ROUTE: "#7a245f",
+  ROUTES_TO: "#7a245f",
   USES_MIDDLEWARE: "#5c2748",
   TESTS: "#6d5520",
   TESTS_SYMBOL: "#6d5520",

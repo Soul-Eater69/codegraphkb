@@ -88,6 +88,8 @@ def export_impact_graph(
         seen_edge_ids.add(edge["id"])
         deduped_edges.append(edge)
 
+    _attach_roles(store, nodes)
+
     return {
         "metadata": {
             "repo_path": repo_path or store.get_meta("repo_path") or "",
@@ -192,3 +194,21 @@ def _qname_to_node_id(qname: str) -> str:
     if qname.endswith((".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")) and "/" in qname:
         return _file_id(qname)
     return _symbol_id(qname)
+
+
+def _attach_roles(store: GraphStore, nodes: dict[str, dict[str, Any]]) -> None:
+    roles_by_node = store.object_roles_by_node()
+    for node_id, node in nodes.items():
+        roles = roles_by_node.get(node_id)
+        if not roles:
+            continue
+        primary = roles[0]
+        node["role"] = primary["role"]
+        node["role_confidence"] = primary["confidence"]
+        metadata = node.setdefault("metadata", {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+            node["metadata"] = metadata
+        metadata["roles"] = roles
+        metadata["role"] = primary["role"]
+        metadata["role_confidence"] = primary["confidence"]

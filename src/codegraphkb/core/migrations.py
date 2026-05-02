@@ -107,6 +107,17 @@ def migrate_schema(conn) -> None:
         task_id TEXT NOT NULL,
         metrics_json TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS object_roles (
+        id TEXT PRIMARY KEY,
+        node_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        confidence REAL NOT NULL,
+        reason TEXT NOT NULL DEFAULT '',
+        signals_json TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_object_roles_node ON object_roles(node_id);
+    CREATE INDEX IF NOT EXISTS idx_object_roles_role ON object_roles(role);
     """)
     _set_meta(conn, "graph_schema_version", str(GRAPH_SCHEMA_VERSION))
 

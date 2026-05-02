@@ -20,6 +20,10 @@ env/
 .codegraphkb/
 reports/
 
+# Local browser/debug artifacts
+.playwright-mcp/
+codegraphkb-*.png
+
 # OS
 .DS_Store
 Thumbs.db

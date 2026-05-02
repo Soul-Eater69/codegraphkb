@@ -76,6 +76,7 @@ def collect_doctor_report(kb) -> dict[str, Any]:
         edge_types = _edge_type_counts(store)
         framework_object_counts = _framework_object_counts(object_types, edge_types)
         process_counts = _process_counts(store)
+        role_counts = store.object_role_counts()
         embedding_stub = embedding_model.startswith("hash-stub")
         embedding_provider = _embedding_provider(embedding_model)
         return {
@@ -115,6 +116,7 @@ def collect_doctor_report(kb) -> dict[str, Any]:
             "edge_type_counts": edge_types,
             "framework_object_counts": framework_object_counts,
             "process_counts": process_counts,
+            "role_counts": role_counts,
             "frameworks": frameworks,
             "languages": store.file_languages(),
             "stale_files_for_parser": stale[:25],
@@ -138,6 +140,7 @@ def compact_index_state(doctor: dict[str, Any]) -> dict[str, Any]:
         "symbol_count": int(doctor.get("symbol_count") or 0),
         "edge_count": int(doctor.get("edge_count") or 0),
         "object_type_counts": doctor.get("object_type_counts") or {},
+        "role_counts": doctor.get("role_counts") or {},
         "doctor": doctor,
     }
 
