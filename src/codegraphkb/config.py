@@ -53,7 +53,7 @@ SECRET_FILES = {".env", ".env.local", ".env.production", "credentials.json", "se
 class IndexConfig:
     repo_path: Path
     index_dir: Path
-    languages: list[str] = field(default_factory=lambda: ["python", "javascript", "typescript"])
+    languages: list[str] = field(default_factory=lambda: ["python", "javascript", "typescript", "java"])
     follow_symlinks: bool = False
 
     @classmethod

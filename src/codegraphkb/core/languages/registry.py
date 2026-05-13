@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from codegraphkb.core.languages.java import JavaLanguageProvider
 from codegraphkb.core.languages.provider import LanguageProvider
 from codegraphkb.core.languages.python import PythonLanguageProvider
 from codegraphkb.core.languages.typescript import TypeScriptLanguageProvider
@@ -36,6 +37,7 @@ class LanguageProviderRegistry:
             [
                 PythonLanguageProvider(),
                 TypeScriptLanguageProvider(backend=parser_backend),
+                JavaLanguageProvider(),
             ],
             parser_backend=parser_backend,
         )
@@ -97,6 +99,8 @@ class LanguageProviderRegistry:
 def _expected_parser_backend(provider_id: str, backend: ParserBackend) -> str:
     if provider_id == "python":
         return "ast"
+    if provider_id == "java":
+        return "regex"
     if backend == ParserBackend.REGEX:
         return "regex"
     if backend == ParserBackend.TREESITTER:

@@ -11,6 +11,10 @@ from enum import Enum
 from typing import Callable
 
 from codegraphkb.core.parsers.base import ExtractResult
+from codegraphkb.core.parsers.java_parser import (
+    JAVA_PARSER_VERSION,
+    parse_java as _regex_java_parse,
+)
 from codegraphkb.core.parsers.js_parser import parse_javascript as _regex_js_parse
 from codegraphkb.core.parsers.python_parser import parse_python as _ast_python_parse
 from codegraphkb.core.scanner import SourceFile
@@ -42,6 +46,9 @@ def parse(
 ) -> tuple[ExtractResult, ParserChoice]:
     if source.language == "python":
         return _ast_python_parse(source), ParserChoice("ast", PYTHON_AST_VERSION)
+
+    if source.language == "java":
+        return _regex_java_parse(source), ParserChoice("regex", JAVA_PARSER_VERSION)
 
     if source.language in ("javascript", "typescript"):
         if backend == ParserBackend.REGEX:
