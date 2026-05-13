@@ -3,7 +3,11 @@ from codegraphkb.core.semantic.merge import (
     SEMANTIC_BACKEND_ID,
     merge_semantic_result,
 )
-from codegraphkb.core.semantic.protocol import SemanticAdapter, SemanticResult
+from codegraphkb.core.semantic.protocol import (
+    SemanticAdapter,
+    SemanticParameter,
+    SemanticResult,
+)
 from codegraphkb.core.semantic.typescript_adapter import (
     TypeScriptSemanticAdapter,
     find_helper,
@@ -11,6 +15,7 @@ from codegraphkb.core.semantic.typescript_adapter import (
 
 __all__ = [
     "SemanticAdapter",
+    "SemanticParameter",
     "SemanticResult",
     "TypeScriptSemanticAdapter",
     "find_helper",

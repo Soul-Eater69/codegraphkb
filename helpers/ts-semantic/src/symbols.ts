@@ -2,7 +2,7 @@
 
 import * as path from "path";
 import * as ts from "typescript";
-import { SemanticSymbol, SemanticTypeFact } from "./protocol";
+import { SemanticParameter, SemanticSymbol, SemanticTypeFact } from "./protocol";
 
 export interface ExtractedSymbols {
   symbols: SemanticSymbol[];
@@ -164,6 +164,7 @@ export function extractSymbols(
       return_type: returnType,
       start_line: start.line + 1,
       end_line: end.line + 1,
+      parameters: [],
     };
   }
 
@@ -171,16 +172,16 @@ export function extractSymbols(
     node: ts.SignatureDeclaration,
     owner: SemanticSymbol,
   ): void {
-    for (const param of node.parameters) {
-      if (!param.name || !ts.isIdentifier(param.name)) continue;
-      const declared = param.type ? param.type.getText(source) : "";
-      const inferred = declared || describeType(checker, param);
+    owner.parameters = node.parameters.map((param, index) =>
+      makeParameter(param, index, owner.qualified_name),
+    );
+    for (const param of owner.parameters) {
       types.push({
         owner_symbol: owner.qualified_name,
-        name: param.name.text,
+        name: param.name,
         kind: "parameter",
-        declared_type: declared,
-        inferred_type: inferred,
+        declared_type: param.declared_type,
+        inferred_type: param.inferred_type,
       });
     }
     if (owner.return_type) {
@@ -192,6 +193,26 @@ export function extractSymbols(
         inferred_type: owner.return_type,
       });
     }
+  }
+
+  function makeParameter(
+    param: ts.ParameterDeclaration,
+    index: number,
+    ownerQname: string,
+  ): SemanticParameter {
+    const declared = param.type ? param.type.getText(source) : "";
+    const inferred = declared || describeType(checker, param);
+    return {
+      owner_symbol: ownerQname,
+      name: parameterName(param),
+      position: index,
+      declared_type: declared,
+      inferred_type: inferred,
+      default_value: param.initializer ? param.initializer.getText(source) : "",
+      is_optional: Boolean(param.questionToken || param.initializer),
+      is_variadic: Boolean(param.dotDotDotToken),
+      confidence: declared || inferred ? 0.92 : 0.72,
+    };
   }
 
   visit(source, null);
@@ -238,4 +259,9 @@ function describeType(checker: ts.TypeChecker, node: ts.Node): string {
   } catch {
     return "";
   }
+}
+
+function parameterName(param: ts.ParameterDeclaration): string {
+  if (ts.isIdentifier(param.name)) return param.name.text;
+  return param.name.getText();
 }

@@ -25,10 +25,13 @@ def _enrich_python(source: SourceFile, extract: ExtractResult) -> FrameworkExtra
     from codegraphkb.core.extractors.python.sqlalchemy import detect_sqlalchemy
     from codegraphkb.core.extractors.python.pydantic import detect_pydantic
     from codegraphkb.core.extractors.python.envvar import detect_env_vars
+    from codegraphkb.core.extractors.python.constant_reads import detect_constant_reads
+    from codegraphkb.core.extractors.python.config_reads import detect_config_reads
 
     out = FrameworkExtraction()
     for detect in (detect_fastapi, detect_flask, detect_pytest,
-                   detect_sqlalchemy, detect_pydantic, detect_env_vars):
+                   detect_sqlalchemy, detect_pydantic, detect_env_vars,
+                   detect_constant_reads, detect_config_reads):
         partial = detect(source, extract)
         out.extra_symbols.extend(partial.extra_symbols)
         out.extra_edges.extend(partial.extra_edges)

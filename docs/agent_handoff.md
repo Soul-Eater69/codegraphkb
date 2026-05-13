@@ -828,3 +828,137 @@ tests/test_ui_api.py
 2) Add route canonicalization so duplicate `route::...` / `fastapi::...` route nodes collapse before UI/export.
 3) Use roles in the UI layouts: handlers/routes/processes/services/repositories should drive framework and impact scenes.
 ```
+
+## Handoff - 2026-05-03 00:20 America/Chicago
+
+### Phase
+phase5a-typed-symbol-model
+
+### Agent
+Codex
+
+### Task
+Implemented structured symbol parameters as first-class typed facts. This keeps parameters table-first rather than turning every parameter into a visible graph node.
+
+### Files Changed
+- `.gitignore`
+- `helpers/ts-semantic/src/protocol.ts`
+- `helpers/ts-semantic/src/symbols.ts`
+- `src/codegraphkb/core/parsers/base.py`
+- `src/codegraphkb/core/parsers/python_parser.py`
+- `src/codegraphkb/core/parsers/js_parser.py`
+- `src/codegraphkb/core/parsers/treesitter_js_parser.py`
+- `src/codegraphkb/core/semantic/protocol.py`
+- `src/codegraphkb/core/semantic/typescript_adapter.py`
+- `src/codegraphkb/core/semantic/merge.py`
+- `src/codegraphkb/core/semantic/__init__.py`
+- `src/codegraphkb/core/semantic/base.py`
+- `src/codegraphkb/core/store.py`
+- `src/codegraphkb/core/migrations.py`
+- `src/codegraphkb/core/indexer.py`
+- `src/codegraphkb/core/graph_schema.py`
+- `src/codegraphkb/versioning.py`
+- `src/codegraphkb/api.py`
+- `src/codegraphkb/cli.py`
+- `src/codegraphkb/diagnostics.py`
+- `src/codegraphkb/server/ui_server.py`
+- `src/codegraphkb/core/exporters/graph_exporter.py`
+- `src/codegraphkb/core/exporters/impact_exporter.py`
+- `src/codegraphkb/core/exporters/neo4j_exporter.py`
+- `tests/test_parameters.py`
+- `docs/agent_handoff.md`
+
+### Commands Run
+```bash
+cmd /c npm --prefix helpers\ts-semantic run build
+py -3 -m pytest tests\test_parameters.py -q --tb=short --basetemp=.pytest_tmp_params
+py -3 -m pytest tests\test_parameters.py tests\test_typescript_semantic.py tests\test_object_roles.py tests\test_exporters.py tests\test_neo4j_exporter.py tests\test_ui_api.py -q --tb=short --basetemp=.pytest_tmp_phase5a
+git rm --cached -r --ignore-unmatch .pytest_tmp_roles_final
+git status --short
+```
+
+### Tests Run
+```bash
+tests/test_parameters.py
+tests/test_typescript_semantic.py
+tests/test_object_roles.py
+tests/test_exporters.py
+tests/test_neo4j_exporter.py
+tests/test_ui_api.py
+```
+
+### What Passed
+- New parameter tests passed: 4 passed.
+- Targeted regression suite passed: 31 passed.
+- TypeScript semantic helper rebuilt successfully.
+- `parameters` table and indexes are created through base schema/migration.
+- Python AST extracts annotations, defaults, `*args`, keyword-only args, `**kwargs`, and return annotations.
+- TS/JS syntax parser extracts function/arrow parameters and return types in regex/tree-sitter paths.
+- TypeScript Compiler API helper emits structured `parameters` on semantic symbols.
+- Semantic merge replaces syntax parameters with language-semantic precision when available.
+- `/api/node/{id}`, graph export, impact export, stats, doctor, and Neo4j export expose parameter facts.
+
+### What Failed / Blocked
+- Initial `git rm --cached` hit a sandbox index-lock permission error; rerunning with approved escalation removed `.pytest_tmp_roles_final/` from the Git index.
+
+### Next Recommended Step
+```text
+1) Re-index the repo and verify `codegraph stats --json` shows parameter counts.
+2) Push to Neo4j again; nodes now carry `parameters_json`.
+3) Start Phase 5B: callsites + call_arguments, using this parameter table for argument-to-parameter mapping.
+```
+
+## Handoff - 2026-05-03 14:05 America/Chicago
+
+### Phase
+phase5a-verification-hardening
+
+### Agent
+Codex
+
+### Task
+Verified Phase 5A against the real repo index before moving to 5B. Fixed two verification findings: human `codegraph stats` did not show parameter counts, and legacy semantic-only parameter rows could remain orphaned from earlier indexes.
+
+### Files Changed
+- `src/codegraphkb/cli.py`
+- `src/codegraphkb/core/semantic/merge.py`
+- `src/codegraphkb/core/store.py`
+- `src/codegraphkb/core/indexer.py`
+- `pyproject.toml`
+- `tests/test_parameters.py`
+- `docs/agent_handoff.md`
+
+### Commands Run
+```bash
+py -3 -m pytest tests\test_parameters.py -q --tb=short --basetemp=.pytest_tmp_verify_params
+py -3 -m pytest -q --tb=short --basetemp=.pytest_tmp_verify_all
+codegraph doctor --json
+codegraph stats
+codegraph index . --force --semantic auto
+codegraph export graph --format json --view symbols --out graph.json
+py -3 -c "import sqlite3; cx=sqlite3.connect('.codegraphkb/graph.sqlite'); print(cx.execute('select count(*) from parameters p left join symbols s on s.qualified_name=p.owner_qname where s.qualified_name is null').fetchone()[0])"
+```
+
+### Tests Run
+```bash
+tests/test_parameters.py
+full pytest suite
+```
+
+### What Passed
+- Parameter suite now covers 8 cases and passed.
+- Full pytest suite passed: 93 passed, 2 warnings.
+- Fresh repo index completed with schema version 5.
+- `codegraph stats` now prints `Parameters`.
+- `codegraph doctor --json` reports `parameter_count`.
+- `graph.json` export contains parameter arrays on symbol nodes.
+- Parameter owner integrity check now returns `0` orphan rows.
+
+### What Failed / Blocked
+- Full pytest initially collected generated `.pytest_tmp*` fixture folders. Added pytest config to restrict collection to `tests/` and ignore `.pytest_tmp*`.
+- DB integrity check initially found 698 orphan parameter rows from old semantic-only owners. Semantic merge now only persists params for existing symbols, and indexing prunes legacy orphan params.
+
+### Next Recommended Step
+```text
+Start Phase 5B.1: callsite and call_arguments schema/store/merge/API tests. Do not jump to HTTP contracts yet.
+```

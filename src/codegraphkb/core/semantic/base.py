@@ -1,6 +1,7 @@
 from codegraphkb.core.semantic.protocol import (
     SemanticAdapter,
     SemanticFileResult,
+    SemanticParameter,
     SemanticReference,
     SemanticResult,
     SemanticSymbol,
@@ -10,6 +11,7 @@ from codegraphkb.core.semantic.protocol import (
 __all__ = [
     "SemanticAdapter",
     "SemanticFileResult",
+    "SemanticParameter",
     "SemanticReference",
     "SemanticResult",
     "SemanticSymbol",

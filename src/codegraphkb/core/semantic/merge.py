@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 
 from codegraphkb.core.graph_schema import PrecisionLevel
 from codegraphkb.core.semantic.protocol import (
+    SemanticParameter,
     SemanticReference,
     SemanticResult,
     SemanticSymbol,
@@ -42,6 +43,7 @@ class MergeStats:
     edges_inserted: int = 0
     types_inserted: int = 0
     symbols_enriched: int = 0
+    parameters_merged: int = 0
 
 
 def merge_semantic_result(
@@ -55,8 +57,12 @@ def merge_semantic_result(
 
     for file_result in result.files:
         for symbol in file_result.symbols:
-            if _enrich_symbol(store, symbol, backend_version):
+            symbol_exists = _enrich_symbol(store, symbol, backend_version)
+            if symbol_exists:
                 stats.symbols_enriched += 1
+            if symbol_exists and symbol.parameters:
+                _replace_semantic_parameters(store, symbol.parameters)
+                stats.parameters_merged += len(symbol.parameters)
 
         for ref in file_result.references:
             if ref.to_symbol is None:
@@ -220,3 +226,32 @@ def _insert_type_fact(store: GraphStore, type_fact: SemanticTypeFact) -> bool:
             ),
         )
     return True
+
+
+def _replace_semantic_parameters(
+    store: GraphStore,
+    parameters: list[SemanticParameter],
+) -> None:
+    if not parameters:
+        return
+    owner = parameters[0].owner_symbol
+    rows = [
+        {
+            "name": p.name,
+            "position": p.position,
+            "declared_type": p.declared_type,
+            "inferred_type": p.inferred_type,
+            "default_value": p.default_value,
+            "is_optional": p.is_optional,
+            "is_variadic": p.is_variadic,
+            "confidence": p.confidence,
+            "precision_level": int(PrecisionLevel.LANGUAGE_SEMANTIC),
+            "extraction_source": SEMANTIC_BACKEND_ID,
+            "metadata": {
+                "semantic_backend": SEMANTIC_BACKEND_ID,
+                "owner_symbol": p.owner_symbol,
+            },
+        }
+        for p in parameters
+    ]
+    store.replace_parameters_for_symbol(owner, rows)

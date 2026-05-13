@@ -10,6 +10,7 @@ from pathlib import Path
 
 from codegraphkb.core.semantic.protocol import (
     SemanticFileResult,
+    SemanticParameter,
     SemanticReference,
     SemanticResult,
     SemanticSymbol,
@@ -19,7 +20,7 @@ from codegraphkb.core.semantic.protocol import (
 
 ADAPTER_ID = "typescript-compiler-api"
 ADAPTER_LANGUAGE = "typescript"
-ADAPTER_VERSION = "0.1.0"
+ADAPTER_VERSION = "0.2.0"
 DEFAULT_TIMEOUT_S = 120
 
 
@@ -160,6 +161,20 @@ def _result_from_dict(data: dict) -> SemanticResult:
                     return_type=s.get("return_type", ""),
                     start_line=int(s.get("start_line", 0) or 0),
                     end_line=int(s.get("end_line", 0) or 0),
+                    parameters=[
+                        SemanticParameter(
+                            owner_symbol=p.get("owner_symbol", s.get("qualified_name", "")),
+                            name=p.get("name", ""),
+                            position=int(p.get("position", 0) or 0),
+                            declared_type=p.get("declared_type", ""),
+                            inferred_type=p.get("inferred_type", ""),
+                            default_value=p.get("default_value", ""),
+                            is_optional=bool(p.get("is_optional", False)),
+                            is_variadic=bool(p.get("is_variadic", False)),
+                            confidence=float(p.get("confidence", 0.0) or 0.0),
+                        )
+                        for p in s.get("parameters", [])
+                    ],
                 )
                 for s in f.get("symbols", [])
             ],

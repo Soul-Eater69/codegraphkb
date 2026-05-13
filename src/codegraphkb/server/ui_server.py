@@ -66,6 +66,7 @@ def build_ui_app(repo_path: str):
             "files": stats["files"],
             "symbols": stats["symbols"],
             "edges": stats["edges"],
+            "parameters": stats.get("parameters", 0),
             "processes": process_count,
             "languages": stats.get("languages", {}),
             "indexed_at": stats.get("last_indexed_at"),
@@ -74,6 +75,7 @@ def build_ui_app(repo_path: str):
             "node_kinds": {r["kind"]: int(r["n"]) for r in node_kind_rows},
             "edge_types": {r["edge_type"]: int(r["n"]) for r in edge_type_rows},
             "roles": stats.get("roles", {}),
+            "parameter_types": stats.get("parameter_types", {}),
             "index_health_details": {
                 "schema_version": stats.get("schema_version"),
                 "parser_backend_pref": stats.get("parser_backend_pref"),
@@ -390,6 +392,7 @@ def _node_details(store: GraphStore, kb: CodeGraphKB, node_id: str) -> dict[str,
         if sym is None:
             return None
         roles = store.roles_for_node(node_id)
+        parameters = store.parameters_for_symbol(qname)
         callers = [_edge_ref(e.src_qname, e.edge_type, e.confidence) for e in store.incoming(qname, ["CALLS", "HANDLES_ROUTE", "TESTS", "TESTS_SYMBOL"])]
         callees = [_edge_ref(e.dst_qname or e.dst_name, e.edge_type, e.confidence) for e in store.outgoing(qname, ["CALLS", "QUERIES", "FETCHES", "CALLS_EXTERNAL", "USES_MIDDLEWARE"])]
         tests = [{"id": f"symbol:{t.qualified_name}", "label": t.name, "kind": t.kind, "file_path": t.file_path} for t in kb.related_tests(qname)]
@@ -407,6 +410,7 @@ def _node_details(store: GraphStore, kb: CodeGraphKB, node_id: str) -> dict[str,
                 "roles": roles,
                 "role": roles[0]["role"] if roles else None,
                 "role_confidence": roles[0]["confidence"] if roles else None,
+                "parameters": parameters,
                 "metadata": sym.extras,
             },
             "relationships": {

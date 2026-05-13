@@ -221,6 +221,8 @@ class CodeGraphKB:
                 "files": store.file_count(),
                 "symbols": store.symbol_count(),
                 "edges": store.edge_count(),
+                "parameters": store.parameter_count(),
+                "parameter_types": store.parameter_counts_by_type(),
                 "embeddings": store.embedding_count(),
                 "languages": store.file_languages(),
                 "roles": store.object_role_counts(),

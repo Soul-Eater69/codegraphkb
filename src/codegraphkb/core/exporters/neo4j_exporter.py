@@ -188,6 +188,9 @@ def _node_props(node: dict[str, Any], graph_metadata: dict[str, Any]) -> dict[st
         props["role_confidence"] = float(role_confidence or 0.0)
     if metadata.get("roles") is not None:
         props["roles_json"] = _json(metadata.get("roles"))
+    params = node.get("parameters", metadata.get("parameters"))
+    if params is not None:
+        props["parameters_json"] = _json(params)
     for key in ("start_line", "end_line"):
         value = node.get(key)
         if value is not None:

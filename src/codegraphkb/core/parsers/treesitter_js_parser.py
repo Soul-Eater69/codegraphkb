@@ -16,7 +16,13 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
-from codegraphkb.core.parsers.base import ExtractResult, ParsedEdge, ParsedSymbol
+from codegraphkb.core.graph_schema import PrecisionLevel
+from codegraphkb.core.parsers.base import (
+    ExtractResult,
+    ParsedEdge,
+    ParsedParameter,
+    ParsedSymbol,
+)
 from codegraphkb.core.scanner import SourceFile
 
 # Imported lazily to keep the optional dep boundary clean.
@@ -175,6 +181,7 @@ def _handle_function(node, state: _State, scope: list[str], class_stack: list[st
     params_node = node.child_by_field_name("parameters")
     params_text = _text(params_node, state).strip() if params_node else ""
     body_node = node.child_by_field_name("body")
+    return_type = _return_type_text(node, params_node, body_node, state)
     has_jsx = _contains_jsx(body_node, state) if body_node is not None else False
 
     if forced_kind is not None:
@@ -189,11 +196,16 @@ def _handle_function(node, state: _State, scope: list[str], class_stack: list[st
     sig = ""
     if node.type == "method_definition":
         sig = f"{name}{params_text}".strip()
+        if return_type:
+            sig = f"{sig}: {return_type}"
     elif node.type == "arrow_function":
-        sig = f"const {name} = {params_text} =>" if params_text else f"const {name} = () =>"
+        params_sig = params_text or "()"
+        sig = f"const {name} = {params_sig}" + (f": {return_type}" if return_type else "") + " =>"
     else:
         prefix = "async function" if _has_async_modifier(node, state) else "function"
         sig = f"{prefix} {name}{params_text}".strip()
+        if return_type:
+            sig = f"{sig}: {return_type}"
 
     state.symbols.append(ParsedSymbol(
         kind=kind,
@@ -202,7 +214,9 @@ def _handle_function(node, state: _State, scope: list[str], class_stack: list[st
         start_line=node.start_point[0] + 1,
         end_line=node.end_point[0] + 1,
         signature=sig,
+        return_type=return_type,
         parent_qualified_name=scope[-1] if scope else None,
+        parameters=_parse_parameters_text(params_text, extraction_source="tree-sitter"),
     ))
 
     # Test-block linkage: `describe('login flow', () => { ... })` should TEST the symbols
@@ -408,3 +422,82 @@ def _detect_grammar(source: SourceFile) -> str:
     if source.rel_path.endswith(".jsx"):
         return "jsx"
     return "javascript"
+
+
+def _return_type_text(node, params_node, body_node, state: _State) -> str:
+    if params_node is None:
+        return ""
+    end = body_node.start_byte if body_node is not None else node.end_byte
+    raw = state.source_bytes[params_node.end_byte:end].decode("utf-8", errors="replace")
+    raw = raw.strip()
+    if raw.startswith(":"):
+        raw = raw[1:].strip()
+        for marker in ("=>", "{"):
+            if marker in raw:
+                raw = raw.split(marker, 1)[0].strip()
+        return raw
+    return ""
+
+
+def _parse_parameters_text(params_text: str, *, extraction_source: str) -> list[ParsedParameter]:
+    text = params_text.strip()
+    if text.startswith("(") and text.endswith(")"):
+        text = text[1:-1]
+    out: list[ParsedParameter] = []
+    for raw in _split_params(text):
+        item = raw.strip()
+        if not item:
+            continue
+        default_value = ""
+        if "=" in item:
+            item, default_value = [part.strip() for part in item.split("=", 1)]
+        is_variadic = item.startswith("...")
+        if is_variadic:
+            item = item[3:].strip()
+        declared_type = ""
+        if ":" in item:
+            name_part, declared_type = [part.strip() for part in item.split(":", 1)]
+        else:
+            name_part = item
+        is_optional = name_part.endswith("?") or bool(default_value)
+        name = name_part.rstrip("?").strip() or "<anonymous>"
+        out.append(ParsedParameter(
+            name=name,
+            position=len(out),
+            declared_type=declared_type,
+            inferred_type=declared_type,
+            default_value=default_value,
+            is_optional=is_optional,
+            is_variadic=is_variadic,
+            confidence=0.78 if declared_type else 0.6,
+            precision_level=int(PrecisionLevel.SYNTAX),
+            extraction_source=extraction_source,
+            metadata={"raw": raw.strip()},
+        ))
+    return out
+
+
+def _split_params(params: str) -> list[str]:
+    items: list[str] = []
+    start = 0
+    depth = 0
+    quote: str | None = None
+    for idx, ch in enumerate(params):
+        if quote:
+            if ch == quote and (idx == 0 or params[idx - 1] != "\\"):
+                quote = None
+            continue
+        if ch in {"'", '"', "`"}:
+            quote = ch
+            continue
+        if ch in "([{<":
+            depth += 1
+        elif ch in ")]}>":
+            depth = max(0, depth - 1)
+        elif ch == "," and depth == 0:
+            items.append(params[start:idx])
+            start = idx + 1
+    tail = params[start:]
+    if tail.strip():
+        items.append(tail)
+    return items

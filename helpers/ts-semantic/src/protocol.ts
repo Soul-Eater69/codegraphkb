@@ -1,5 +1,17 @@
 // JSON contract emitted by the helper. Mirrors codegraphkb.core.semantic.protocol.
 
+export interface SemanticParameter {
+  owner_symbol: string;
+  name: string;
+  position: number;
+  declared_type: string;
+  inferred_type: string;
+  default_value: string;
+  is_optional: boolean;
+  is_variadic: boolean;
+  confidence: number;
+}
+
 export interface SemanticSymbol {
   id: string;
   name: string;
@@ -9,6 +21,7 @@ export interface SemanticSymbol {
   return_type: string;
   start_line: number;
   end_line: number;
+  parameters: SemanticParameter[];
 }
 
 export interface SemanticReference {
@@ -46,4 +59,4 @@ export interface SemanticResult {
   diagnostics: Array<Record<string, unknown>>;
 }
 
-export const ADAPTER_VERSION = "0.1.0";
+export const ADAPTER_VERSION = "0.2.0";

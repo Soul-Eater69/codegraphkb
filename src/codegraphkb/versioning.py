@@ -12,7 +12,7 @@ from codegraphkb.core.parsers.registry import (
     ParserBackend,
 )
 
-SCHEMA_VERSION = 4          # bumped when sqlite tables change shape
+SCHEMA_VERSION = 5          # bumped when sqlite tables change shape
 CAPSULE_VERSION = 1         # bumped when capsule layout changes
 RETRIEVAL_VERSION = 2       # bumped when ranking / RRF / modes change
 

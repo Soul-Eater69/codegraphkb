@@ -104,6 +104,25 @@ CREATE TABLE IF NOT EXISTS embeddings (
 );
 CREATE INDEX IF NOT EXISTS idx_embeddings_model ON embeddings(model);
 
+CREATE TABLE IF NOT EXISTS parameters (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_qname TEXT NOT NULL,
+    name TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    declared_type TEXT NOT NULL DEFAULT '',
+    inferred_type TEXT NOT NULL DEFAULT '',
+    default_value TEXT NOT NULL DEFAULT '',
+    is_optional INTEGER NOT NULL DEFAULT 0,
+    is_variadic INTEGER NOT NULL DEFAULT 0,
+    confidence REAL NOT NULL DEFAULT 0.0,
+    precision_level INTEGER NOT NULL DEFAULT 1,
+    extraction_source TEXT NOT NULL DEFAULT '',
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    UNIQUE(owner_qname, position, name)
+);
+CREATE INDEX IF NOT EXISTS idx_parameters_owner ON parameters(owner_qname);
+CREATE INDEX IF NOT EXISTS idx_parameters_type ON parameters(declared_type);
+
 CREATE TABLE IF NOT EXISTS object_roles (
     id TEXT PRIMARY KEY,
     node_id TEXT NOT NULL,
@@ -155,6 +174,22 @@ class EdgeRow:
     precision_level: int = int(PrecisionLevel.SYNTAX)
     extraction_source: str = ""
     reason: str = ""
+    metadata: dict = None  # type: ignore[assignment]
+
+
+@dataclass
+class ParameterRow:
+    owner_qname: str
+    name: str
+    position: int
+    declared_type: str = ""
+    inferred_type: str = ""
+    default_value: str = ""
+    is_optional: bool = False
+    is_variadic: bool = False
+    confidence: float = 0.0
+    precision_level: int = int(PrecisionLevel.SYNTAX)
+    extraction_source: str = ""
     metadata: dict = None  # type: ignore[assignment]
 
 
@@ -277,6 +312,125 @@ class GraphStore:
     def edge_count(self) -> int:
         return int(self._conn.execute("SELECT COUNT(*) AS n FROM edges").fetchone()["n"])
 
+    def edge_resolution_stats(self) -> dict:
+        """Return resolved/unresolved edge counts and the resolution rate.
+
+        Used by ``codegraph doctor`` to surface index quality. The rate is
+        ``resolved / total``; returns 0.0 when there are no edges.
+        """
+        total = self.edge_count()
+        resolved = int(self._conn.execute(
+            "SELECT COUNT(*) AS n FROM edges WHERE dst_qname IS NOT NULL"
+        ).fetchone()["n"])
+        unresolved = total - resolved
+        rate = (resolved / total) if total else 0.0
+        return {
+            "total": total,
+            "resolved": resolved,
+            "unresolved": unresolved,
+            "resolution_rate": rate,
+        }
+
+    def edge_resolution_by_type(self) -> dict[str, dict]:
+        """Per-``edge_type`` breakdown of resolved / unresolved / rate.
+
+        The overall resolution rate hides important signal: IMPORTS edges
+        point at library modules that will never be in the index (so they
+        stay unresolved by design), while CALLS edges *should* mostly
+        resolve. Splitting by type lets the doctor surface the rate
+        readers actually care about.
+        """
+        rows = self._conn.execute("""
+            SELECT edge_type,
+                   COUNT(*) AS total,
+                   SUM(CASE WHEN dst_qname IS NOT NULL THEN 1 ELSE 0 END) AS resolved
+            FROM edges
+            GROUP BY edge_type
+            ORDER BY total DESC
+        """).fetchall()
+        out: dict[str, dict] = {}
+        for r in rows:
+            total = int(r["total"])
+            resolved = int(r["resolved"] or 0)
+            out[r["edge_type"]] = {
+                "total": total,
+                "resolved": resolved,
+                "unresolved": total - resolved,
+                "resolution_rate": (resolved / total) if total else 0.0,
+            }
+        return out
+
+    def unresolved_edges_by_language(self) -> dict[str, int]:
+        """Group unresolved edges by the source file's language."""
+        rows = self._conn.execute("""
+            SELECT COALESCE(f.language, '') AS lang, COUNT(*) AS n
+            FROM edges e
+            LEFT JOIN symbols s ON s.qualified_name = e.src_qname
+            LEFT JOIN files f ON f.id = s.file_id
+            WHERE e.dst_qname IS NULL
+            GROUP BY lang
+        """).fetchall()
+        return {r["lang"] or "unknown": int(r["n"]) for r in rows}
+
+    def edge_resolution_strategy_counts(self) -> dict[str, int]:
+        """Count resolved edges by which resolver tagged them.
+
+        We grep ``extraction_source`` for the marker tags PR 2/PR 4 stamp
+        (``import-alias-resolver``, ``edge-resolver:file_scope``,
+        ``edge-resolver:class_scope``); edges resolved by the broad
+        unique-name pass don't carry a marker and are counted as
+        ``unique_name``. Pure-syntax pre-resolved edges (semantic adapter,
+        parser-resolved) fall in ``parser_resolved``.
+        """
+        rows = self._conn.execute(
+            "SELECT extraction_source FROM edges WHERE dst_qname IS NOT NULL"
+        ).fetchall()
+        out: dict[str, int] = {
+            "import_alias": 0,
+            "file_scope": 0,
+            "class_scope": 0,
+            "unique_name": 0,
+            "parser_resolved": 0,
+        }
+        for r in rows:
+            src = (r["extraction_source"] or "").lower()
+            if "import-alias-resolver" in src:
+                out["import_alias"] += 1
+            elif "edge-resolver:file_scope" in src:
+                out["file_scope"] += 1
+            elif "edge-resolver:class_scope" in src:
+                out["class_scope"] += 1
+            elif src and src not in {"ast", "regex", "tree-sitter", "syntax"}:
+                # Anything with a non-trivial source that didn't match the
+                # known resolver tags came from an extractor or semantic
+                # adapter that pre-resolved the target itself.
+                out["parser_resolved"] += 1
+            else:
+                # Plain syntax extraction that got resolved by the broad
+                # unique-name pass (the only remaining resolver that runs).
+                out["unique_name"] += 1
+        return out
+
+    def top_unresolved_edge_names(self, limit: int = 25) -> list[dict]:
+        """Top ``dst_name`` values that the resolver couldn't pin down.
+
+        Sorted by frequency; the same name may be unresolved across many call
+        sites. Useful for spotting ambiguous globals (e.g. ``parse`` with 17
+        candidates).
+        """
+        rows = self._conn.execute("""
+            SELECT dst_name, edge_type, COUNT(*) AS n
+            FROM edges
+            WHERE dst_qname IS NULL AND dst_name IS NOT NULL AND dst_name != ''
+            GROUP BY dst_name, edge_type
+            ORDER BY n DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+        return [
+            {"dst_name": r["dst_name"], "edge_type": r["edge_type"], "count": int(r["n"])}
+            for r in rows
+        ]
+
     def find_symbol(self, qualified_name: str) -> SymbolRow | None:
         row = self._conn.execute(
             "SELECT s.*, f.path AS file_path FROM symbols s JOIN files f ON s.file_id = f.id "
@@ -378,6 +532,81 @@ class GraphStore:
                     SELECT COUNT(*) FROM symbols s2 WHERE s2.name = edges.dst_name
                   ) = 1
             """)
+
+    # ---------- import bindings (Phase 4.2) ----------
+    def clear_import_bindings_for_file(self, file_path: str) -> None:
+        with self.transaction() as cx:
+            cx.execute("DELETE FROM imports WHERE file_path=?", (file_path,))
+
+    def insert_import_bindings(self, bindings: Iterable) -> None:
+        """Insert ImportBinding rows for a file.
+
+        Accepts dataclass-shaped objects with attributes
+        ``file_path, local_name, imported_name, source_module, import_kind,
+        line, confidence, reason, resolved_qname, metadata`` (the last three
+        may be empty/None on initial insert).
+        """
+        rows = []
+        for b in bindings:
+            rows.append((
+                b.file_path,
+                b.imported_name,
+                b.resolved_qname,
+                float(b.confidence),
+                int(getattr(b, "precision_level", 1) or 1),
+                json.dumps(b.metadata or {}),
+                b.local_name,
+                b.source_module,
+                b.import_kind,
+                b.line,
+                b.reason or "",
+            ))
+        if not rows:
+            return
+        with self.transaction() as cx:
+            cx.executemany(
+                "INSERT INTO imports(file_path, imported_name, target_qname, "
+                "confidence, precision_level, metadata_json, local_name, "
+                "source_module, import_kind, line, reason) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                rows,
+            )
+
+    def import_binding_count(self) -> int:
+        row = self._conn.execute("SELECT COUNT(*) AS n FROM imports").fetchone()
+        return int(row["n"]) if row else 0
+
+    def iter_import_bindings_by_file(self) -> dict[str, list[dict]]:
+        """Group import bindings by file path.
+
+        Returns ``{file_path: [{local_name, imported_name, source_module,
+        import_kind, target_qname, line}, ...]}``.
+        """
+        rows = self._conn.execute(
+            "SELECT file_path, local_name, imported_name, source_module, "
+            "import_kind, target_qname, line FROM imports "
+            "WHERE local_name != ''"
+        ).fetchall()
+        out: dict[str, list[dict]] = {}
+        for r in rows:
+            out.setdefault(r["file_path"], []).append({
+                "local_name": r["local_name"],
+                "imported_name": r["imported_name"],
+                "source_module": r["source_module"],
+                "import_kind": r["import_kind"],
+                "target_qname": r["target_qname"],
+                "line": r["line"],
+            })
+        return out
+
+    def update_import_binding_target(
+        self, file_path: str, local_name: str, target_qname: str,
+    ) -> None:
+        with self.transaction() as cx:
+            cx.execute(
+                "UPDATE imports SET target_qname=? WHERE file_path=? AND local_name=?",
+                (target_qname, file_path, local_name),
+            )
 
     def outgoing(self, src_qname: str, edge_types: Iterable[str] | None = None) -> list[EdgeRow]:
         if edge_types:
@@ -503,6 +732,76 @@ class GraphStore:
         ).fetchone()
         return _row_to_symbol(row)
 
+    # ---------- parameters ----------
+    def replace_parameters_for_symbol(self, owner_qname: str, parameters: Iterable) -> None:
+        rows = [_normalize_parameter_row(owner_qname, p) for p in parameters]
+        with self.transaction() as cx:
+            cx.execute("DELETE FROM parameters WHERE owner_qname=?", (owner_qname,))
+            if rows:
+                cx.executemany(
+                    "INSERT INTO parameters(owner_qname, name, position, declared_type, "
+                    "inferred_type, default_value, is_optional, is_variadic, confidence, "
+                    "precision_level, extraction_source, metadata_json) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?) "
+                    "ON CONFLICT(owner_qname, position, name) DO UPDATE SET "
+                    "declared_type=excluded.declared_type, "
+                    "inferred_type=excluded.inferred_type, "
+                    "default_value=excluded.default_value, "
+                    "is_optional=excluded.is_optional, "
+                    "is_variadic=excluded.is_variadic, "
+                    "confidence=excluded.confidence, "
+                    "precision_level=excluded.precision_level, "
+                    "extraction_source=excluded.extraction_source, "
+                    "metadata_json=excluded.metadata_json",
+                    rows,
+                )
+
+    def delete_parameters_for_symbols(self, qualified_names: Iterable[str]) -> None:
+        qnames = list(qualified_names)
+        if not qnames:
+            return
+        placeholders = ",".join("?" * len(qnames))
+        with self.transaction() as cx:
+            cx.execute(
+                f"DELETE FROM parameters WHERE owner_qname IN ({placeholders})",
+                qnames,
+            )
+
+    def parameters_for_symbol(self, owner_qname: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM parameters WHERE owner_qname=? ORDER BY position, id",
+            (owner_qname,),
+        ).fetchall()
+        return [_parameter_row_to_dict(r) for r in rows]
+
+    def parameters_by_owner(self) -> dict[str, list[dict]]:
+        rows = self._conn.execute(
+            "SELECT * FROM parameters ORDER BY owner_qname, position, id"
+        ).fetchall()
+        out: dict[str, list[dict]] = {}
+        for row in rows:
+            out.setdefault(row["owner_qname"], []).append(_parameter_row_to_dict(row))
+        return out
+
+    def parameter_counts_by_type(self) -> dict[str, int]:
+        rows = self._conn.execute(
+            "SELECT COALESCE(NULLIF(declared_type, ''), NULLIF(inferred_type, ''), '(unknown)') "
+            "AS type_name, COUNT(*) AS n FROM parameters GROUP BY type_name"
+        ).fetchall()
+        return {r["type_name"]: int(r["n"]) for r in rows}
+
+    def parameter_count(self) -> int:
+        return int(self._conn.execute("SELECT COUNT(*) AS n FROM parameters").fetchone()["n"])
+
+    def prune_orphan_parameters(self) -> int:
+        """Remove parameter rows whose owner symbol no longer exists."""
+        with self.transaction() as cx:
+            cur = cx.execute(
+                "DELETE FROM parameters "
+                "WHERE owner_qname NOT IN (SELECT qualified_name FROM symbols)"
+            )
+            return int(cur.rowcount or 0)
+
     # ---------- object roles ----------
     def replace_object_roles(self, roles: Iterable[tuple]) -> None:
         """Replace inferred object roles with stable, auditable rows."""
@@ -603,6 +902,51 @@ def _normalize_edge_row(row: tuple, created_at: str) -> tuple:
             at or created_at,
         )
     raise ValueError(f"Expected edge row with 7 or 12 fields, got {len(row)}")
+
+
+def _normalize_parameter_row(owner_qname: str, param) -> tuple:
+    if isinstance(param, tuple):
+        return param
+    if isinstance(param, dict):
+        getter = param.get
+    else:
+        getter = lambda key, default=None: getattr(param, key, default)
+    metadata = getter("metadata", {}) or {}
+    return (
+        owner_qname,
+        str(getter("name", "") or ""),
+        int(getter("position", 0) or 0),
+        str(getter("declared_type", "") or ""),
+        str(getter("inferred_type", "") or ""),
+        str(getter("default_value", "") or ""),
+        1 if bool(getter("is_optional", False)) else 0,
+        1 if bool(getter("is_variadic", False)) else 0,
+        float(getter("confidence", 0.0) or 0.0),
+        int(getter("precision_level", int(PrecisionLevel.SYNTAX)) or int(PrecisionLevel.SYNTAX)),
+        str(getter("extraction_source", "") or ""),
+        json.dumps(metadata) if not isinstance(metadata, str) else metadata,
+    )
+
+
+def _parameter_row_to_dict(row: sqlite3.Row) -> dict:
+    try:
+        metadata = json.loads(row["metadata_json"]) if row["metadata_json"] else {}
+    except (TypeError, json.JSONDecodeError, KeyError):
+        metadata = {}
+    return {
+        "owner_qname": row["owner_qname"],
+        "name": row["name"],
+        "position": int(row["position"]),
+        "declared_type": row["declared_type"] or "",
+        "inferred_type": row["inferred_type"] or "",
+        "default_value": row["default_value"] or "",
+        "is_optional": bool(row["is_optional"]),
+        "is_variadic": bool(row["is_variadic"]),
+        "confidence": float(row["confidence"] or 0.0),
+        "precision_level": int(row["precision_level"] or 1),
+        "extraction_source": row["extraction_source"] or "",
+        "metadata": metadata,
+    }
 
 
 def _object_role_row_to_dict(row: sqlite3.Row) -> dict:

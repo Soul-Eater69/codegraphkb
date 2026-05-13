@@ -77,6 +77,17 @@ def collect_doctor_report(kb) -> dict[str, Any]:
         framework_object_counts = _framework_object_counts(object_types, edge_types)
         process_counts = _process_counts(store)
         role_counts = store.object_role_counts()
+        parameter_types = store.parameter_counts_by_type()
+        edge_resolution = store.edge_resolution_stats()
+        edge_resolution_by_type = store.edge_resolution_by_type()
+        unresolved_by_language = store.unresolved_edges_by_language()
+        top_unresolved = store.top_unresolved_edge_names(limit=25)
+        resolution_strategy_counts = store.edge_resolution_strategy_counts()
+        parser_fallback_rate = (
+            len(fallback_files) / store.file_count()
+            if store.file_count() else 0.0
+        )
+        import_bindings = store.import_binding_count()
         embedding_stub = embedding_model.startswith("hash-stub")
         embedding_provider = _embedding_provider(embedding_model)
         return {
@@ -112,6 +123,18 @@ def collect_doctor_report(kb) -> dict[str, Any]:
             "indexed_file_count": store.file_count(),
             "symbol_count": store.symbol_count(),
             "edge_count": store.edge_count(),
+            "edge_resolution": edge_resolution,
+            "edge_resolution_by_type": edge_resolution_by_type,
+            "edge_resolution_rate": edge_resolution["resolution_rate"],
+            "resolved_edge_count": edge_resolution["resolved"],
+            "unresolved_edge_count": edge_resolution["unresolved"],
+            "unresolved_edges_by_language": unresolved_by_language,
+            "top_unresolved_edge_names": top_unresolved,
+            "resolution_strategy_counts": resolution_strategy_counts,
+            "parser_fallback_rate": parser_fallback_rate,
+            "import_binding_count": import_bindings,
+            "parameter_count": store.parameter_count(),
+            "parameter_type_counts": parameter_types,
             "object_type_counts": object_types,
             "edge_type_counts": edge_types,
             "framework_object_counts": framework_object_counts,
@@ -139,7 +162,9 @@ def compact_index_state(doctor: dict[str, Any]) -> dict[str, Any]:
         "indexed_file_count": int(doctor.get("indexed_file_count") or 0),
         "symbol_count": int(doctor.get("symbol_count") or 0),
         "edge_count": int(doctor.get("edge_count") or 0),
+        "parameter_count": int(doctor.get("parameter_count") or 0),
         "object_type_counts": doctor.get("object_type_counts") or {},
+        "parameter_type_counts": doctor.get("parameter_type_counts") or {},
         "role_counts": doctor.get("role_counts") or {},
         "doctor": doctor,
     }
@@ -183,12 +208,17 @@ def _framework_object_counts(object_types: dict[str, int],
         "api_consumers": int(object_types.get("api_consumer", 0)),
         "components": int(object_types.get("component", 0)),
         "env_vars": int(object_types.get("env_var", 0)),
+        "constants": int(object_types.get("constant", 0)),
+        "config_keys": int(object_types.get("config_key", 0)),
         "handles_route_edges": int(edge_types.get("HANDLES_ROUTE", 0)),
         "tests_edges": int(edge_types.get("TESTS", 0)),
         "queries_edges": int(edge_types.get("QUERIES", 0)),
         "fetches_edges": int(edge_types.get("FETCHES", 0)),
         "calls_external_edges": int(edge_types.get("CALLS_EXTERNAL", 0)),
         "uses_middleware_edges": int(edge_types.get("USES_MIDDLEWARE", 0)),
+        "reads_env_var_edges": int(edge_types.get("READS_ENV_VAR", 0)),
+        "reads_constant_edges": int(edge_types.get("READS_CONSTANT", 0)),
+        "reads_config_key_edges": int(edge_types.get("READS_CONFIG_KEY", 0)),
     }
 
 

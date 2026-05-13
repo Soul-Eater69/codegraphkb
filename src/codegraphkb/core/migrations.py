@@ -58,8 +58,16 @@ def migrate_schema(conn) -> None:
         target_qname TEXT,
         confidence REAL NOT NULL DEFAULT 0.0,
         precision_level INTEGER NOT NULL DEFAULT 1,
-        metadata_json TEXT NOT NULL DEFAULT '{}'
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        local_name TEXT NOT NULL DEFAULT '',
+        source_module TEXT NOT NULL DEFAULT '',
+        import_kind TEXT NOT NULL DEFAULT 'named',
+        line INTEGER,
+        reason TEXT NOT NULL DEFAULT ''
     );
+    CREATE INDEX IF NOT EXISTS idx_imports_file ON imports(file_path);
+    -- idx_imports_local_name is created below, AFTER _ensure_column has
+    -- backfilled the column on legacy DBs.
     CREATE TABLE IF NOT EXISTS processes (
         id TEXT PRIMARY KEY,
         label TEXT NOT NULL,
@@ -118,7 +126,39 @@ def migrate_schema(conn) -> None:
     );
     CREATE INDEX IF NOT EXISTS idx_object_roles_node ON object_roles(node_id);
     CREATE INDEX IF NOT EXISTS idx_object_roles_role ON object_roles(role);
+    CREATE TABLE IF NOT EXISTS parameters (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        owner_qname TEXT NOT NULL,
+        name TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        declared_type TEXT NOT NULL DEFAULT '',
+        inferred_type TEXT NOT NULL DEFAULT '',
+        default_value TEXT NOT NULL DEFAULT '',
+        is_optional INTEGER NOT NULL DEFAULT 0,
+        is_variadic INTEGER NOT NULL DEFAULT 0,
+        confidence REAL NOT NULL DEFAULT 0.0,
+        precision_level INTEGER NOT NULL DEFAULT 1,
+        extraction_source TEXT NOT NULL DEFAULT '',
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        UNIQUE(owner_qname, position, name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_parameters_owner ON parameters(owner_qname);
+    CREATE INDEX IF NOT EXISTS idx_parameters_type ON parameters(declared_type);
     """)
+    # Phase 4.2 — richer import bindings. Run AFTER the executescript above
+    # so the imports table exists even on a fresh DB. Older DBs only have
+    # file_path/imported_name/target_qname; add the columns the alias
+    # resolver needs.
+    _ensure_column(conn, "imports", "local_name", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "imports", "source_module", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "imports", "import_kind", "TEXT NOT NULL DEFAULT 'named'")
+    _ensure_column(conn, "imports", "line", "INTEGER")
+    _ensure_column(conn, "imports", "reason", "TEXT NOT NULL DEFAULT ''")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_imports_local_name "
+        "ON imports(file_path, local_name)"
+    )
+
     _set_meta(conn, "graph_schema_version", str(GRAPH_SCHEMA_VERSION))
 
 

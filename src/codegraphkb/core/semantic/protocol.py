@@ -6,6 +6,19 @@ from typing import Protocol
 
 
 @dataclass
+class SemanticParameter:
+    owner_symbol: str
+    name: str
+    position: int
+    declared_type: str = ""
+    inferred_type: str = ""
+    default_value: str = ""
+    is_optional: bool = False
+    is_variadic: bool = False
+    confidence: float = 0.9
+
+
+@dataclass
 class SemanticSymbol:
     id: str
     name: str
@@ -15,6 +28,7 @@ class SemanticSymbol:
     return_type: str = ""
     start_line: int = 0
     end_line: int = 0
+    parameters: list[SemanticParameter] = field(default_factory=list)
 
 
 @dataclass
@@ -64,7 +78,13 @@ class SemanticResult:
             "files": [
                 {
                     "path": f.path,
-                    "symbols": [vars(s) for s in f.symbols],
+                    "symbols": [
+                        {
+                            **vars(s),
+                            "parameters": [vars(p) for p in s.parameters],
+                        }
+                        for s in f.symbols
+                    ],
                     "references": [vars(r) for r in f.references],
                     "types": [vars(t) for t in f.types],
                 }

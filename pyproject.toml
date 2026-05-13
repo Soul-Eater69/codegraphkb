@@ -47,3 +47,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 codegraphkb = ["py.typed", "assets/*.js", "assets/*.css"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = [".pytest_tmp*", ".codegraphkb", "ui", "ui/dist", "ui/node_modules"]

@@ -7,6 +7,7 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
+.pytest_tmp*/
 .venv/
 venv/
 env/
@@ -23,6 +24,9 @@ reports/
 # Local browser/debug artifacts
 .playwright-mcp/
 codegraphkb-*.png
+.tmp/
+tmp_work/
+graph.json
 
 # OS
 .DS_Store

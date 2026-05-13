@@ -9,7 +9,7 @@ from __future__ import annotations
 from enum import IntEnum, StrEnum
 
 
-GRAPH_SCHEMA_VERSION = 4
+GRAPH_SCHEMA_VERSION = 5
 
 
 class PrecisionLevel(IntEnum):
@@ -91,6 +91,9 @@ class EdgeType(StrEnum):
     SUBSCRIBES = "SUBSCRIBES"
     USES_CONFIG = "USES_CONFIG"
     USES_SECRET = "USES_SECRET"
+    READS_CONSTANT = "READS_CONSTANT"
+    READS_CONFIG_KEY = "READS_CONFIG_KEY"
+    READS_ENV_VAR = "READS_ENV_VAR"
     CALLS_EXTERNAL = "CALLS_EXTERNAL"
     TESTS = "TESTS"
     TESTS_SYMBOL = "TESTS_SYMBOL"

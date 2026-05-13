@@ -82,6 +82,18 @@ def index_cmd(repo: str, force: bool, force_parser_refresh: bool, quiet: bool,
         click.echo(f"  Removed:     {stats.files_removed}")
     click.echo(f"  Symbols:     {stats.symbols}")
     click.echo(f"  Edges:       {stats.edges}")
+    if stats.parameters:
+        click.echo(f"  Parameters:  {stats.parameters}")
+    if stats.alias_bindings_total:
+        click.echo(
+            f"  Aliases:     {stats.alias_bindings_resolved}/{stats.alias_bindings_total} "
+            f"resolved, {stats.alias_edges_rewritten} edges rewritten"
+        )
+    if stats.scope_edges_file or stats.scope_edges_class:
+        click.echo(
+            f"  Scope-fix:   file={stats.scope_edges_file}, "
+            f"class={stats.scope_edges_class}"
+        )
     if stats.parser_backends:
         used = ", ".join(f"{k}={v}" for k, v in stats.parser_backends.items()
                          if not k.startswith("embedded:"))
@@ -98,7 +110,8 @@ def index_cmd(repo: str, force: bool, force_parser_refresh: bool, quiet: bool,
                 f"  Semantic[{lang}]: {status}  "
                 f"upgraded={info.get('edges_upgraded', 0)} "
                 f"inserted={info.get('edges_inserted', 0)} "
-                f"types={info.get('types_inserted', 0)}"
+                f"types={info.get('types_inserted', 0)} "
+                f"params={info.get('parameters_merged', 0)}"
             )
             for warn in info.get("warnings", []) or []:
                 click.echo(click.style(f"        ! {warn}", fg="yellow"))
@@ -114,12 +127,17 @@ def index_cmd(repo: str, force: bool, force_parser_refresh: bool, quiet: bool,
 @cli.command("doctor", help="Diagnose the index: parser version, schema, embeddings, stale files.")
 @click.argument("repo", type=click.Path(file_okay=False, exists=True), default=".")
 @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable diagnostics.")
-def doctor_cmd(repo: str, as_json: bool) -> None:
+@click.option("--unresolved", "show_unresolved", is_flag=True,
+              help="Show top unresolved edge target names and per-language counts.")
+def doctor_cmd(repo: str, as_json: bool, show_unresolved: bool) -> None:
     kb = CodeGraphKB(repo)
     from codegraphkb.diagnostics import collect_doctor_report
     report = collect_doctor_report(kb)
     if as_json:
         click.echo(json.dumps(report, indent=2))
+        return
+    if show_unresolved:
+        _print_unresolved_view(report)
         return
     click.echo(click.style("CodeGraphKB doctor", bold=True))
     click.echo(f"  Tree-sitter installed:     {report['tree_sitter_available']}")
@@ -139,6 +157,28 @@ def doctor_cmd(repo: str, as_json: bool) -> None:
     click.echo(f"  Indexed files:             {report['indexed_file_count']}")
     click.echo(f"  Symbols:                   {report['symbol_count']}")
     click.echo(f"  Edges:                     {report['edge_count']}")
+    resolved = report.get("resolved_edge_count", 0)
+    unresolved = report.get("unresolved_edge_count", 0)
+    rate = report.get("edge_resolution_rate", 0.0)
+    click.echo(f"  Edge resolution:           "
+               f"{resolved}/{report['edge_count']} resolved "
+               f"({rate*100:.1f}%), {unresolved} unresolved")
+    by_type = report.get("edge_resolution_by_type") or {}
+    # Show the high-signal types (CALLS / EXTENDS / TESTS) on their own lines
+    # so the user sees the resolution rate that actually matters for retrieval.
+    for et in ("CALLS", "EXTENDS", "TESTS"):
+        info = by_type.get(et)
+        if not info or not info["total"]:
+            continue
+        click.echo(
+            f"    {et:<8} {info['resolved']}/{info['total']} "
+            f"({info['resolution_rate']*100:.1f}%)"
+        )
+    click.echo(f"  Import bindings:           {report.get('import_binding_count', 0)}")
+    click.echo(f"  Parser fallback rate:      "
+               f"{report.get('parser_fallback_rate', 0.0)*100:.1f}% "
+               f"({report.get('parser_fallback_count', 0)} files)")
+    click.echo(f"  Parameters:                {report.get('parameter_count', 0)}")
     if report.get("role_counts"):
         click.echo(f"  Object roles:              " + ", ".join(
             f"{role}={count}" for role, count in sorted(report["role_counts"].items())
@@ -148,6 +188,32 @@ def doctor_cmd(repo: str, as_json: bool) -> None:
         for p in report["stale_files_for_parser"]:
             click.echo(f"    · {p}")
         click.echo("  Hint:  codegraph index <repo> --force-parser-refresh")
+    if unresolved:
+        click.echo("  Hint:  codegraph doctor --unresolved  (show top unresolved targets)")
+
+
+def _print_unresolved_view(report: dict) -> None:
+    total = report.get("edge_count", 0)
+    unresolved = report.get("unresolved_edge_count", 0)
+    rate = report.get("edge_resolution_rate", 0.0)
+    click.echo(click.style("CodeGraphKB doctor — unresolved edges", bold=True))
+    click.echo(f"  Total edges:        {total}")
+    click.echo(f"  Resolved:           {report.get('resolved_edge_count', 0)} "
+               f"({rate*100:.1f}%)")
+    click.echo(f"  Unresolved:         {unresolved}")
+    by_lang = report.get("unresolved_edges_by_language") or {}
+    if by_lang:
+        click.echo()
+        click.echo(click.style("By language", bold=True))
+        for lang, n in sorted(by_lang.items(), key=lambda kv: kv[1], reverse=True):
+            click.echo(f"  {lang:<14} {n}")
+    top = report.get("top_unresolved_edge_names") or []
+    if top:
+        click.echo()
+        click.echo(click.style("Top unresolved target names", bold=True))
+        click.echo(f"  {'count':>6}  {'edge_type':<14}  dst_name")
+        for row in top:
+            click.echo(f"  {row['count']:>6}  {row['edge_type']:<14}  {row['dst_name']}")
 
 
 @cli.command("stats", help="Show counts and metadata for the current index.")
@@ -174,6 +240,8 @@ def stats_cmd(repo: str, as_json: bool, object_types: bool) -> None:
     click.echo(f"  Files:            {s['files']}")
     click.echo(f"  Symbols:          {s['symbols']}")
     click.echo(f"  Edges:            {s['edges']}")
+    if s.get("parameters"):
+        click.echo(f"  Parameters:       {s['parameters']}")
     if s["languages"]:
         click.echo(f"  Languages:        " + ", ".join(f"{k}={v}" for k, v in s["languages"].items()))
     if object_types:

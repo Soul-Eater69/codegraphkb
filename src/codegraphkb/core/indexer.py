@@ -108,6 +108,7 @@ def _run_typescript_semantic_pass(store, config, stats, progress) -> None:
         "edges_inserted": 0,
         "types_inserted": 0,
         "symbols_enriched": 0,
+        "parameters_merged": 0,
     }
     if not run.available or run.result is None:
         stats.semantic_backends["typescript"] = backend_entry
@@ -125,6 +126,7 @@ def _run_typescript_semantic_pass(store, config, stats, progress) -> None:
         "edges_inserted": merge_stats.edges_inserted,
         "types_inserted": merge_stats.types_inserted,
         "symbols_enriched": merge_stats.symbols_enriched,
+        "parameters_merged": merge_stats.parameters_merged,
     })
     stats.semantic_backends["typescript"] = backend_entry
     store.set_meta("semantic_typescript_available", "true")
@@ -148,12 +150,18 @@ class IndexStats:
     files_reparsed_for_version: int = 0
     symbols: int = 0
     edges: int = 0
+    parameters: int = 0
     parser_backends: dict[str, int] = None  # type: ignore[assignment]
     semantic_backends: dict[str, dict] = None  # type: ignore[assignment]
     processes_built: int = 0
     processes_by_type: dict[str, int] = None  # type: ignore[assignment]
     roles_built: int = 0
     roles_by_type: dict[str, int] = None  # type: ignore[assignment]
+    alias_bindings_total: int = 0
+    alias_bindings_resolved: int = 0
+    alias_edges_rewritten: int = 0
+    scope_edges_file: int = 0
+    scope_edges_class: int = 0
 
     def __post_init__(self):
         if self.parser_backends is None:
@@ -214,6 +222,7 @@ def index_repository(config: IndexConfig, force: bool = False,
             # Capture old symbol qnames before upsert deletes them (cascade),
             # so we can purge edges that touch removed symbols afterwards.
             old_qnames = store.symbol_qnames_in_file(src.rel_path)
+            store.delete_parameters_for_symbols(old_qnames)
             file_id = store.upsert_file(
                 path=src.rel_path,
                 language=src.language,
@@ -285,6 +294,8 @@ def index_repository(config: IndexConfig, force: bool = False,
                     metadata_json=sym.extras,
                 )
                 stats.symbols += 1
+                store.replace_parameters_for_symbol(sym.qualified_name, sym.parameters)
+                stats.parameters += len(sym.parameters)
                 symbol_qnames.append(sym.qualified_name)
                 new_or_updated_symbol_ids.append(sym_id)
 
@@ -299,9 +310,13 @@ def index_repository(config: IndexConfig, force: bool = False,
             store.delete_edges_from_symbols(symbol_qnames)
             edge_rows = []
             for edge in extract.edges:
+                # Producers may pre-resolve dst_qname (semantic adapters,
+                # alias resolvers); fall back to None and let the
+                # whole-repo resolution pass fill it.
+                pre_resolved = getattr(edge, "dst_qname", None)
                 edge_rows.append((
                     edge.src_qualified_name,
-                    None,  # dst_qname resolved later
+                    pre_resolved,
                     edge.dst_name,
                     edge.edge_type,
                     edge.confidence,
@@ -315,6 +330,14 @@ def index_repository(config: IndexConfig, force: bool = False,
                 ))
             store.insert_edges(edge_rows)
             stats.edges += len(edge_rows)
+
+            # Phase 4.2 — persist this file's import bindings. We clear the
+            # file's existing rows first so renames / removed imports don't
+            # leave stale bindings behind across re-indexes.
+            store.clear_import_bindings_for_file(src.rel_path)
+            if extract.imports:
+                store.insert_import_bindings(extract.imports)
+
             stats.files_indexed += 1
 
             # Build search-index terms for each symbol added.
@@ -341,12 +364,46 @@ def index_repository(config: IndexConfig, force: bool = False,
             stale_qnames = store.symbol_qnames_in_file(stale)
             if stale_qnames:
                 store.delete_edges_touching_symbols(stale_qnames)
+                store.delete_parameters_for_symbols(stale_qnames)
             store.delete_file(stale)
             stats.files_removed += 1
             if progress:
                 progress(f"removed {stale}")
 
-        # Resolve edge targets where unambiguous
+        # Phase 4.2 — alias-driven resolution. This runs before the broad
+        # unique-name resolver so the alias rewrites get the precise edges
+        # first; the unique-name pass then cleans up what's left.
+        from codegraphkb.core.import_resolver import (
+            resolve_imports_and_rewrite_edges,
+        )
+        alias_stats = resolve_imports_and_rewrite_edges(store)
+        stats.alias_bindings_total = alias_stats.bindings_total
+        stats.alias_bindings_resolved = alias_stats.bindings_resolved
+        stats.alias_edges_rewritten = alias_stats.edges_rewritten
+        if progress and alias_stats.edges_rewritten:
+            progress(
+                f"alias resolver rewrote {alias_stats.edges_rewritten} edges "
+                f"({alias_stats.bindings_resolved}/{alias_stats.bindings_total} "
+                f"bindings resolved)"
+            )
+
+        # Phase 4.4 — scope-aware rewrites (same-file then same-class).
+        # Runs after the alias pass (which is the most authoritative) but
+        # before the broad unique-name fallback so precise scope hits win
+        # over noisy unique-name matches.
+        from codegraphkb.core.edge_resolver import resolve_edges_by_scope
+        scope_stats = resolve_edges_by_scope(store)
+        stats.scope_edges_file = scope_stats.file_scope_rewritten
+        stats.scope_edges_class = scope_stats.class_scope_rewritten
+        if progress and scope_stats.total_rewritten:
+            progress(
+                f"scope resolver rewrote {scope_stats.total_rewritten} edges "
+                f"(file={scope_stats.file_scope_rewritten} "
+                f"class={scope_stats.class_scope_rewritten})"
+            )
+
+        # Resolve edge targets where unambiguous (catches anything earlier
+        # passes couldn't handle — true globals, framework conventions, etc.)
         store.resolve_edge_targets()
 
         # Phase 3.1 — semantic enrichment pass.
@@ -357,6 +414,9 @@ def index_repository(config: IndexConfig, force: bool = False,
 
         # Schema v4 — auditable object roles above raw syntax kinds.
         _run_role_pass(store, stats, progress)
+
+        store.prune_orphan_parameters()
+        stats.parameters = store.parameter_count()
 
         store.set_meta("last_indexed_at", now)
         store.set_meta("repo_path", str(config.repo_path))

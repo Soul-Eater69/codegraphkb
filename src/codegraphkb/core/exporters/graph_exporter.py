@@ -173,6 +173,7 @@ def export_graph(
         )[:max_edges]
 
     _attach_roles(store, nodes)
+    _attach_parameters(store, nodes)
 
     return {
         "metadata": _metadata(store, view, repo_path, len(nodes), len(edges)),
@@ -284,6 +285,7 @@ def _export_processes_view(
         edges = edges[:max_edges]
 
     _attach_roles(store, nodes)
+    _attach_parameters(store, nodes)
 
     return {
         "metadata": _metadata(store, VIEW_PROCESSES, repo_path, len(nodes), len(edges)),
@@ -351,6 +353,24 @@ def _attach_roles(store: GraphStore, nodes: dict[str, dict[str, Any]]) -> None:
         metadata["roles"] = roles
         metadata["role"] = primary["role"]
         metadata["role_confidence"] = primary["confidence"]
+
+
+def _attach_parameters(store: GraphStore, nodes: dict[str, dict[str, Any]]) -> None:
+    params_by_owner = store.parameters_by_owner()
+    for node in nodes.values():
+        metadata = node.setdefault("metadata", {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+            node["metadata"] = metadata
+        qname = metadata.get("qualified_name")
+        if not qname:
+            node_id = str(node.get("id") or "")
+            qname = node_id.split(":", 1)[1] if node_id.startswith("symbol:") else ""
+        params = params_by_owner.get(str(qname))
+        if not params:
+            continue
+        metadata["parameters"] = params
+        node["parameters"] = params
 
 
 def _file_rows(store: GraphStore) -> list[dict[str, Any]]:
