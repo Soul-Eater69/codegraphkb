@@ -23,6 +23,17 @@ docker compose up --build
 curl http://localhost:8765/health
 ```
 
+## Browser Product UI
+
+Run the API and Vite UI in separate terminals:
+
+```bash
+python -m codegraphkb.server.run_product_api
+npm --prefix ui run dev
+```
+
+Open `http://localhost:5173/projects`.
+
 ## Public GitHub Import
 
 ```bash
@@ -76,6 +87,4 @@ curl -X POST http://localhost:8765/projects/<project_id>/prepare-edit \
 - No private GitHub clone flow.
 - No Redis/Celery; jobs run through local FastAPI background tasks.
 - No automatic package installs or test commands from imported repos.
-- The existing local graph UI is preserved; a separate product project UI is
-  still a future slice.
-
+- The graph explorer remains a separate advanced local tool.

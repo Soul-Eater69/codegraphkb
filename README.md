@@ -21,6 +21,27 @@ The engine ships as a **library**, a **CLI**, an **MCP server**, and an optional
 
 ---
 
+## Status
+
+**Status: local-first alpha**
+
+| Area | Status |
+|---|---|
+| CLI | Works |
+| MCP | Works |
+| Product API | Preview |
+| ZIP/GitHub import | Preview |
+| Web product UI | Preview |
+| Python | First-class |
+| JS/TS | First-class/Beta |
+| Java | Beta |
+| Go/C#/Rust/Kotlin | Beta structural parsing |
+
+The beta language providers focus on structural parsing and useful local
+retrieval. Do not treat them as deep semantic analyzers yet.
+
+---
+
 ## Quick start
 
 ```bash
@@ -61,6 +82,16 @@ codegraph validate-plan "Add refresh token rotation"
 codegraph impact-plan src/codegraphkb/core/store.py
 codegraph eval-edit evals/datasets/self_repo_tasks.yaml
 ```
+
+### Product API and UI preview
+
+```bash
+python -m codegraphkb.server.run_product_api
+npm --prefix ui run dev
+```
+
+Open `http://localhost:5173/projects` to import a public GitHub repo or upload
+a ZIP, watch the index job, ask questions, and generate prepare-edit plans.
 
 Phase 4 â€” regression reporting:
 

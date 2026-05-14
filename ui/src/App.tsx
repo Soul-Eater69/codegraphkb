@@ -22,6 +22,7 @@ import { FilterPanel } from "./panels/FilterPanel";
 import { GraphInfoPanel } from "./panels/GraphInfoPanel";
 import { PerspectivesPanel } from "./panels/PerspectivesPanel";
 import { ProcessPanel } from "./panels/ProcessPanel";
+import ProductApp from "./product/ProductApp";
 import type {
   FileTreeNode,
   GraphPayload,
@@ -69,6 +70,13 @@ const VIEW_CAPS: Record<GraphView, { maxNodes: number; maxEdges: number; nodeKin
 };
 
 export default function App() {
+  if (window.location.pathname.startsWith("/projects")) {
+    return <ProductApp />;
+  }
+  return <GraphExplorerApp />;
+}
+
+function GraphExplorerApp() {
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [graph, setGraph] = useState<GraphPayload | null>(null);
   const [perspective, setPerspective] = useState<Perspective>("none");
