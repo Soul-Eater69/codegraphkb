@@ -1,0 +1,10 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./.codegraphkb_app:/app/.codegraphkb_app
+    environment:
+      - CODEGRAPHKB_APP_DIR=/app/.codegraphkb_app
+

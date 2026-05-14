@@ -19,6 +19,7 @@ env/
 
 # CodeGraphKB local index
 .codegraphkb/
+.codegraphkb_app/
 reports/
 
 # Local browser/debug artifacts

@@ -138,6 +138,59 @@ def test_java_method_calls_inside_body() -> None:
     assert "sign" in dst
 
 
+def test_java_extracts_spring_routes() -> None:
+    code = (
+        "package com.example.auth;\n"
+        "import org.springframework.web.bind.annotation.PostMapping;\n"
+        "@RestController\n"
+        "@RequestMapping(\"/api/auth\")\n"
+        "public class AuthController {\n"
+        "    @PostMapping(\"/login\")\n"
+        "    public LoginResponse login(@RequestBody LoginRequest request) {\n"
+        "        return authService.login(request);\n"
+        "    }\n"
+        "}\n"
+    )
+    result = parse_java(_src("AuthController.java", code))
+
+    assert any(
+        s.kind == "route" and s.qualified_name == "route::POST /api/auth/login"
+        for s in result.symbols
+    )
+    assert any(
+        e.edge_type == "ROUTES_TO"
+        and e.src_qualified_name == "route::POST /api/auth/login"
+        and e.dst_qname == "com.example.auth.AuthController.login"
+        for e in result.edges
+    )
+    calls = {e.dst_name for e in result.edges if e.edge_type == "CALLS"}
+    assert "authService.login" in calls
+
+
+def test_java_extracts_junit_tests() -> None:
+    code = (
+        "package com.example.auth;\n"
+        "public class AuthServiceTest {\n"
+        "    @Test\n"
+        "    public void loginWorks() {\n"
+        "        login();\n"
+        "    }\n"
+        "    public void login() {}\n"
+        "}\n"
+    )
+    result = parse_java(_src("AuthServiceTest.java", code))
+    assert any(
+        s.kind == "test_block"
+        and s.qualified_name == "com.example.auth.AuthServiceTest.loginWorks"
+        for s in result.symbols
+    )
+    assert any(
+        e.edge_type == "TESTS"
+        and e.dst_qname == "com.example.auth.AuthServiceTest.login"
+        for e in result.edges
+    )
+
+
 def test_java_annotations_captured_on_class() -> None:
     code = (
         "package com.x;\n"

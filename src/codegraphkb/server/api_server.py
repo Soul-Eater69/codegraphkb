@@ -33,6 +33,18 @@ def build_app(repo_path: str):
         except FileNotFoundError as exc:
             raise HTTPException(404, str(exc))
 
+    @app.get("/languages")
+    def languages() -> dict[str, Any]:
+        return kb.supported_languages()
+
+    @app.get("/projects/{project_id}/languages")
+    def project_languages(project_id: str) -> dict[str, Any]:
+        try:
+            payload = kb.project_languages()
+        except FileNotFoundError as exc:
+            raise HTTPException(404, str(exc))
+        return {"project_id": project_id, **payload}
+
     @app.post("/index")
     def index(force: bool = False) -> dict[str, Any]:
         s = kb.index(force=force)

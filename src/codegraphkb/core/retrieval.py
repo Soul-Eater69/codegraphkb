@@ -534,6 +534,8 @@ def _apply_extra_signals(candidates: list, question: str, q_terms: set,
             cand.score.final += 0.05
         if cand.distance == 0 and "pinned" in cand.sources:
             cand.score.final += 0.10
+        if sym.kind == "file_summary" and "pinned" not in cand.sources:
+            cand.score.final *= 0.45
     candidates.sort(key=lambda c: c.score.final, reverse=True)
 
 
@@ -609,6 +611,8 @@ def _mode_fit(sym: SymbolRow, mode: Mode) -> float:
             score += 1.0
         if sym.kind == "class":
             score += 0.5
+        if sym.kind == "file_summary":
+            score += 0.15
     if mode == Mode.IMPACT:
         if sym.kind in {"function", "method", "class", "route"}:
             score += 1.0
@@ -620,6 +624,8 @@ def _mode_fit(sym: SymbolRow, mode: Mode) -> float:
     if mode in {Mode.EXPLAIN, Mode.ONBOARDING}:
         if sym.kind in {"class", "module", "route"}:
             score += 0.6
+        if sym.kind == "file_summary":
+            score += 0.2
     return min(1.0, score)
 
 

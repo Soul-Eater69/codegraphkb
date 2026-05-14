@@ -25,6 +25,7 @@ LANGUAGE_BY_EXT = {
     ".php": "php",
     ".cs": "csharp",
     ".kt": "kotlin",
+    ".kts": "kotlin",
     ".swift": "swift",
     ".sql": "sql",
     ".md": "markdown",

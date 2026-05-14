@@ -19,9 +19,13 @@ from codegraphkb.core.languages.common import (
 
 class LanguageProvider(Protocol):
     id: str
+    language_id: str
     extensions: tuple[str, ...]
 
     def detect(self, file_path: str) -> bool:
+        ...
+
+    def can_parse(self, path: str) -> bool:
         ...
 
     def parse_syntax(self, source_file: SourceFile) -> SyntaxParseResult:

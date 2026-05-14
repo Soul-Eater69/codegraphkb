@@ -24,6 +24,7 @@ class NodeKind(StrEnum):
     REPOSITORY = "repository"
     FOLDER = "folder"
     FILE = "file"
+    FILE_SUMMARY = "file_summary"
     FUNCTION = "function"
     CLASS = "class"
     METHOD = "method"

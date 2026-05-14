@@ -11,12 +11,28 @@ from enum import Enum
 from typing import Callable
 
 from codegraphkb.core.parsers.base import ExtractResult
+from codegraphkb.core.parsers.csharp_parser import (
+    CSHARP_PARSER_VERSION,
+    parse_csharp as _regex_csharp_parse,
+)
+from codegraphkb.core.parsers.go_parser import (
+    GO_PARSER_VERSION,
+    parse_go as _regex_go_parse,
+)
 from codegraphkb.core.parsers.java_parser import (
     JAVA_PARSER_VERSION,
     parse_java as _regex_java_parse,
 )
 from codegraphkb.core.parsers.js_parser import parse_javascript as _regex_js_parse
+from codegraphkb.core.parsers.kotlin_parser import (
+    KOTLIN_PARSER_VERSION,
+    parse_kotlin as _regex_kotlin_parse,
+)
 from codegraphkb.core.parsers.python_parser import parse_python as _ast_python_parse
+from codegraphkb.core.parsers.rust_parser import (
+    RUST_PARSER_VERSION,
+    parse_rust as _regex_rust_parse,
+)
 from codegraphkb.core.scanner import SourceFile
 
 
@@ -49,6 +65,18 @@ def parse(
 
     if source.language == "java":
         return _regex_java_parse(source), ParserChoice("regex", JAVA_PARSER_VERSION)
+
+    if source.language == "go":
+        return _regex_go_parse(source), ParserChoice("regex", GO_PARSER_VERSION)
+
+    if source.language == "csharp":
+        return _regex_csharp_parse(source), ParserChoice("regex", CSHARP_PARSER_VERSION)
+
+    if source.language == "rust":
+        return _regex_rust_parse(source), ParserChoice("regex", RUST_PARSER_VERSION)
+
+    if source.language == "kotlin":
+        return _regex_kotlin_parse(source), ParserChoice("regex", KOTLIN_PARSER_VERSION)
 
     if source.language in ("javascript", "typescript"):
         if backend == ParserBackend.REGEX:

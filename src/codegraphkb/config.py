@@ -25,7 +25,12 @@ DEFAULT_IGNORE = [
     "env/",
     "dist/",
     "build/",
+    "vendor/",
     ".next/",
+    ".gradle/",
+    ".idea/",
+    ".vscode/",
+    "coverage/",
     ".cache/",
     ".pytest_cache/",
     ".mypy_cache/",
@@ -53,7 +58,16 @@ SECRET_FILES = {".env", ".env.local", ".env.production", "credentials.json", "se
 class IndexConfig:
     repo_path: Path
     index_dir: Path
-    languages: list[str] = field(default_factory=lambda: ["python", "javascript", "typescript", "java"])
+    languages: list[str] = field(default_factory=lambda: [
+        "python",
+        "javascript",
+        "typescript",
+        "java",
+        "go",
+        "csharp",
+        "rust",
+        "kotlin",
+    ])
     follow_symlinks: bool = False
 
     @classmethod

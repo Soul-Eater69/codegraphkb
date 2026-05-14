@@ -85,6 +85,20 @@ def build_ui_app(repo_path: str):
             },
         }
 
+    @app.get("/languages")
+    @app.get("/api/languages")
+    def languages() -> dict[str, Any]:
+        return kb.supported_languages()
+
+    @app.get("/projects/{project_id}/languages")
+    @app.get("/api/projects/{project_id}/languages")
+    def project_languages(project_id: str) -> dict[str, Any]:
+        try:
+            payload = kb.project_languages()
+        except FileNotFoundError as exc:
+            raise HTTPException(404, str(exc))
+        return {"project_id": project_id, **payload}
+
     @app.get("/api/graph")
     def graph(
         view: str = Query("repo"),

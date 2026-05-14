@@ -6,8 +6,13 @@ hasn't changed.
 from __future__ import annotations
 
 from codegraphkb.core.parsers.registry import (
+    CSHARP_PARSER_VERSION,
+    GO_PARSER_VERSION,
+    JAVA_PARSER_VERSION,
+    KOTLIN_PARSER_VERSION,
     PYTHON_AST_VERSION,
     REGEX_JS_VERSION,
+    RUST_PARSER_VERSION,
     TREESITTER_JS_VERSION,
     ParserBackend,
 )
@@ -27,6 +32,15 @@ def parser_signature(language: str, backend: ParserBackend) -> str:
         if backend == ParserBackend.TREESITTER:
             return f"jsts:tree-sitter:{TREESITTER_JS_VERSION}"
         return f"jsts:auto:rt{REGEX_JS_VERSION}-ts{TREESITTER_JS_VERSION}"
+    versions = {
+        "java": JAVA_PARSER_VERSION,
+        "go": GO_PARSER_VERSION,
+        "csharp": CSHARP_PARSER_VERSION,
+        "rust": RUST_PARSER_VERSION,
+        "kotlin": KOTLIN_PARSER_VERSION,
+    }
+    if language in versions:
+        return f"{language}:regex:{versions[language]}"
     return f"{language}:none:1"
 
 

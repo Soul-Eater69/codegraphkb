@@ -32,7 +32,7 @@ def test_provider_registry_uses_python_provider() -> None:
 
 
 def test_provider_registry_falls_back_for_unknown_language() -> None:
-    src = _source("main.rs", "rust", "fn main() {}\n")
+    src = _source("main.bf", "brainfuck", "++++\n")
     result, choice = LanguageProviderRegistry.default().parse_and_extract(src)
     assert result.symbols == []
     assert choice.fallback_used is True

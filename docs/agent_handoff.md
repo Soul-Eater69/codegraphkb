@@ -962,3 +962,182 @@ full pytest suite
 ```text
 Start Phase 5B.1: callsite and call_arguments schema/store/merge/API tests. Do not jump to HTTP contracts yet.
 ```
+
+## Handoff - 2026-05-13 America/Chicago
+
+### Phase
+product-api-v0.1-backend
+
+### Agent
+Codex
+
+### Task
+Implemented the local-first multi-project product backend/API from the shipping plan while preserving the existing UI-3 Sigma/Graphology shell.
+
+### Files Changed
+- `.gitignore`
+- `.env.example`
+- `Dockerfile`
+- `docker-compose.yml`
+- `README.md`
+- `docs/PRODUCT_QUICKSTART.md`
+- `docs/agent_handoff.md`
+- `src/codegraphkb/product/__init__.py`
+- `src/codegraphkb/product/db.py`
+- `src/codegraphkb/product/git.py`
+- `src/codegraphkb/product/jobs.py`
+- `src/codegraphkb/product/models.py`
+- `src/codegraphkb/product/projects.py`
+- `src/codegraphkb/product/serializers.py`
+- `src/codegraphkb/product/settings.py`
+- `src/codegraphkb/product/workspace.py`
+- `src/codegraphkb/product/zip_upload.py`
+- `src/codegraphkb/server/product_api.py`
+- `src/codegraphkb/server/run_product_api.py`
+- `tests/conftest.py`
+- `tests/product/test_git.py`
+- `tests/product/test_jobs.py`
+- `tests/product/test_projects.py`
+- `tests/product/test_workspace.py`
+- `tests/product/test_zip_upload.py`
+- `tests/server/test_product_api.py`
+
+### Commands Run
+```bash
+py -3 -m pytest tests\product tests\server\test_product_api.py -q --tb=short -p no:cacheprovider
+py -3 -m pytest tests\test_ui_api.py tests\test_exporters.py -q --tb=short -p no:cacheprovider
+py -3 -m compileall src
+docker compose config
+git status --short
+```
+
+### Tests Run
+```bash
+tests/product
+tests/server/test_product_api.py
+tests/test_ui_api.py
+tests/test_exporters.py
+```
+
+### What Passed
+- Product backend/API tests passed: 25 passed.
+- Required UI/export regression slice passed after rerunning outside the sandbox: 12 passed.
+- `py -3 -m compileall src` passed after rerunning outside the sandbox.
+- `docker compose config` validated the new product API compose file.
+
+### What Failed / Blocked
+- Sandbox pytest runs cannot access `C:\Users\mahes\AppData\Local\Temp\pytest-of-mahes`; the required UI/export pytest slice failed there before passing with escalated filesystem access.
+- File-backed SQLite writes in scratch workspace directories returned `sqlite3.OperationalError: disk I/O error` in the sandbox. Product tests use SQLite shared-memory URIs; production defaults remain `.codegraphkb_app/app.sqlite`.
+- Sandbox `compileall` could not write `__pycache__` files; rerunning with approved elevated access passed.
+- The minimal multi-project React product UI from the shipping plan was not implemented because the active repo instruction is Phase UI-3 and requires preserving the existing Sigma/Graphology shell.
+
+### Next Recommended Step
+```text
+1) Add a product UI route or separate app slice that does not replace the existing UI-3 graph shell.
+2) Run a real end-to-end ZIP upload/index/ask/prepare-edit smoke test in an environment where file-backed SQLite writes are not blocked.
+3) Optionally add a lightweight product API integration test that indexes a tiny repo once file-backed SQLite is available.
+```
+
+## Handoff - 2026-05-14 America/Chicago
+
+### Phase
+multi-language-support L1-L6 regex MVP
+
+### Agent
+Codex
+
+### Task
+Implemented the multi-language indexing foundation from the user plan: provider hardening, file_summary fallback, supported-language CLI/API metadata, and regex-backed Java/Go/C#/Rust/Kotlin parser support while keeping retrieval and graph storage architecture intact.
+
+### Files Changed
+- `src/codegraphkb/api.py`
+- `src/codegraphkb/cli.py`
+- `src/codegraphkb/config.py`
+- `src/codegraphkb/core/capsules.py`
+- `src/codegraphkb/core/exporters/graph_exporter.py`
+- `src/codegraphkb/core/graph_schema.py`
+- `src/codegraphkb/core/languages/base.py`
+- `src/codegraphkb/core/languages/provider.py`
+- `src/codegraphkb/core/languages/registry.py`
+- `src/codegraphkb/core/languages/python/provider.py`
+- `src/codegraphkb/core/languages/typescript/provider.py`
+- `src/codegraphkb/core/languages/java/provider.py`
+- `src/codegraphkb/core/languages/go/__init__.py`
+- `src/codegraphkb/core/languages/go/provider.py`
+- `src/codegraphkb/core/languages/csharp/__init__.py`
+- `src/codegraphkb/core/languages/csharp/provider.py`
+- `src/codegraphkb/core/languages/rust/__init__.py`
+- `src/codegraphkb/core/languages/rust/provider.py`
+- `src/codegraphkb/core/languages/kotlin/__init__.py`
+- `src/codegraphkb/core/languages/kotlin/provider.py`
+- `src/codegraphkb/core/parsers/fallback.py`
+- `src/codegraphkb/core/parsers/regex_utils.py`
+- `src/codegraphkb/core/parsers/java_parser.py`
+- `src/codegraphkb/core/parsers/go_parser.py`
+- `src/codegraphkb/core/parsers/csharp_parser.py`
+- `src/codegraphkb/core/parsers/rust_parser.py`
+- `src/codegraphkb/core/parsers/kotlin_parser.py`
+- `src/codegraphkb/core/parsers/registry.py`
+- `src/codegraphkb/core/retrieval.py`
+- `src/codegraphkb/core/scanner.py`
+- `src/codegraphkb/server/api_server.py`
+- `src/codegraphkb/server/ui_server.py`
+- `src/codegraphkb/versioning.py`
+- `tests/parsers/test_file_summary_fallback.py`
+- `tests/parsers/test_go_parser.py`
+- `tests/parsers/test_csharp_parser.py`
+- `tests/parsers/test_rust_parser.py`
+- `tests/parsers/test_kotlin_parser.py`
+- `tests/test_engine_foundation.py`
+- `tests/test_java_parser.py`
+- `tests/test_ui_api.py`
+- `docs/agent_handoff.md`
+
+### Commands Run
+```bash
+py -3 -m pytest tests\parsers tests\test_java_parser.py tests\test_engine_foundation.py -q --tb=short -p no:cacheprovider
+py -3 -m pytest tests\parsers tests\test_java_parser.py tests\test_engine_foundation.py -q --tb=short -p no:cacheprovider --basetemp=tmp_work\pytest_multilang_elevated
+py -3 -m pytest tests\test_ui_api.py tests\test_exporters.py -q --tb=short -p no:cacheprovider --basetemp=tmp_work\pytest_ui_export_multilang
+py -3 -m pytest tests\test_engine_foundation.py::test_provider_registry_falls_back_for_unknown_language tests\parsers\test_file_summary_fallback.py::test_registry_adds_file_summary_for_unsupported_code_language tests\parsers\test_file_summary_fallback.py::test_file_summary_fallback_symbol_shape -q --tb=short -p no:cacheprovider
+py -3 -m pytest tests\parsers\test_csharp_parser.py::test_csharp_extracts_types_methods_properties_constants_and_calls -q --tb=short -p no:cacheprovider
+py -3 -m compileall src
+py -3 -m codegraphkb languages
+git status --short
+git diff --stat
+```
+
+### Tests Run
+```bash
+tests/parsers
+tests/test_java_parser.py
+tests/test_engine_foundation.py
+tests/test_ui_api.py
+tests/test_exporters.py
+targeted registry fallback smoke tests
+targeted C# parser smoke test
+compileall src
+```
+
+### What Passed
+- Parser/indexer language slice passed: 32 passed.
+- Required UI/export regression slice passed: 13 passed.
+- Targeted registry fallback smoke passed: 3 passed.
+- Targeted C# parser smoke passed: 1 passed.
+- `py -3 -m compileall src` passed.
+- `codegraph languages` lists Python, JavaScript, TypeScript, Java, Go, C#, Rust, and Kotlin.
+- Java now extracts Spring routes and JUnit-style test blocks.
+- Go, C#, Rust, and Kotlin regex parsers extract core symbols, imports, calls, route/test patterns where applicable.
+- Files with no extracted symbols now receive a searchable `file_summary` fallback capsule.
+
+### What Failed / Blocked
+- Initial sandbox pytest runs hit Windows temp-directory permissions at `C:\Users\mahes\AppData\Local\Temp\pytest-of-mahes`.
+- Workspace basetemp attempts at `.pytest_tmp_multilang` / `tmp_work\pytest_multilang` also became permission-denied during pytest session cleanup.
+- Rerunning pytest with approved elevated filesystem access passed.
+- The new non-JS languages are regex MVPs, not full tree-sitter/JDT/Roslyn/rust-analyzer semantic parsers.
+
+### Next Recommended Step
+```text
+1) Add tree-sitter-backed parsers or semantic adapters for Java/Go/C#/Rust/Kotlin as follow-up precision work.
+2) Add `codegraph ask --language <id>` / retrieval language filtering.
+3) Run full pytest once the temp-directory ACL issue is cleared, then index a mixed-language sample repo and verify ask/prepare-edit recall manually.
+```

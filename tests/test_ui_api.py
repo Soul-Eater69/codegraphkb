@@ -74,6 +74,18 @@ def test_ui_graph_api(indexed_repo: Path) -> None:
     assert payload["edges"]
 
 
+def test_ui_languages_api(indexed_repo: Path) -> None:
+    client = _client(indexed_repo)
+    supported = client.get("/api/languages")
+    assert supported.status_code == 200
+    languages = {item["id"] for item in supported.json()["supported"]}
+    assert {"python", "java", "go", "csharp", "rust", "kotlin"} <= languages
+
+    stats = client.get("/api/projects/local/languages")
+    assert stats.status_code == 200
+    assert "languages" in stats.json()
+
+
 def test_ui_search_api(indexed_repo: Path) -> None:
     client = _client(indexed_repo)
     resp = client.get("/api/search", params={"q": "upload"})

@@ -7,6 +7,7 @@ from typing import Iterable
 
 from codegraphkb.config import DEFAULT_TOKEN_BUDGET, IndexConfig
 from codegraphkb.core.indexer import IndexStats, index_repository
+from codegraphkb.core.languages.registry import LanguageProviderRegistry
 from codegraphkb.core.llm import LLMResponse, answer_with_context
 from codegraphkb.core.parsers import ParserBackend
 from codegraphkb.core.retrieval import (
@@ -143,7 +144,7 @@ class CodeGraphKB:
             f"Impact analysis for {target}: what callers, routes, and tests are affected?",
             intent=Intent.IMPACT,
             mode=Mode.IMPACT,
-            pinned_files=[target] if "/" in target or target.endswith((".py", ".ts", ".js", ".tsx", ".jsx")) else None,
+            pinned_files=[target] if "/" in target or target.endswith(_CODE_EXTENSIONS) else None,
         )
 
     def explain(self, target: str) -> ContextPack:
@@ -204,7 +205,7 @@ class CodeGraphKB:
     def resolve_symbol(self, name_or_path: str) -> list[SymbolRow]:
         store = self._open_store()
         try:
-            if "/" in name_or_path or name_or_path.endswith((".py", ".ts", ".js", ".tsx", ".jsx")):
+            if "/" in name_or_path or name_or_path.endswith(_CODE_EXTENSIONS):
                 return store.symbols_in_file(name_or_path)
             sym = store.find_symbol(name_or_path)
             if sym:
@@ -236,6 +237,12 @@ class CodeGraphKB:
             }
         finally:
             store.close()
+
+    def supported_languages(self) -> dict:
+        return {"supported": LanguageProviderRegistry.supported_languages()}
+
+    def project_languages(self) -> dict:
+        return {"languages": self.stats().get("languages", {})}
 
     def doctor(self) -> dict:
         """Health report — what is present, what is stale, what is missing."""
@@ -472,3 +479,9 @@ def _coerce_intent(intent: Intent | str | None) -> Intent | None:
         except ValueError:
             return classify_intent(intent)
     return None
+
+
+_CODE_EXTENSIONS = (
+    ".py", ".pyi", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+    ".java", ".go", ".cs", ".rs", ".kt", ".kts",
+)

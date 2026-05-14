@@ -2,13 +2,36 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
+from codegraphkb.core.languages.csharp import CSharpLanguageProvider
+from codegraphkb.core.languages.go import GoLanguageProvider
 from codegraphkb.core.languages.java import JavaLanguageProvider
+from codegraphkb.core.languages.kotlin import KotlinLanguageProvider
 from codegraphkb.core.languages.provider import LanguageProvider
 from codegraphkb.core.languages.python import PythonLanguageProvider
+from codegraphkb.core.languages.rust import RustLanguageProvider
 from codegraphkb.core.languages.typescript import TypeScriptLanguageProvider
+from codegraphkb.core.parsers.fallback import FALLBACK_PARSER_VERSION, file_summary_fallback
 from codegraphkb.core.parsers.registry import ParserBackend, is_treesitter_available
 from codegraphkb.core.scanner import SourceFile
+
+
+SUPPORTED_LANGUAGES = [
+    {"id": "python", "extensions": [".py", ".pyi"], "status": "first_class"},
+    {"id": "javascript", "extensions": [".js", ".jsx", ".mjs", ".cjs"], "status": "first_class"},
+    {"id": "typescript", "extensions": [".ts", ".tsx"], "status": "first_class"},
+    {"id": "java", "extensions": [".java"], "status": "beta"},
+    {"id": "go", "extensions": [".go"], "status": "beta"},
+    {"id": "csharp", "extensions": [".cs"], "status": "beta"},
+    {"id": "rust", "extensions": [".rs"], "status": "beta"},
+    {"id": "kotlin", "extensions": [".kt", ".kts"], "status": "beta"},
+]
+
+CODE_FALLBACK_LANGUAGES = {
+    "python", "javascript", "typescript", "java", "go", "csharp", "rust",
+    "kotlin", "ruby", "php", "swift", "sql",
+}
 
 
 @dataclass(frozen=True)
@@ -38,6 +61,10 @@ class LanguageProviderRegistry:
                 PythonLanguageProvider(),
                 TypeScriptLanguageProvider(backend=parser_backend),
                 JavaLanguageProvider(),
+                GoLanguageProvider(),
+                CSharpLanguageProvider(),
+                RustLanguageProvider(),
+                KotlinLanguageProvider(),
             ],
             parser_backend=parser_backend,
         )
@@ -47,6 +74,21 @@ class LanguageProviderRegistry:
             if source.language == provider.id or provider.detect(source.rel_path):
                 return provider
         return None
+
+    def get_provider_for_file(self, path: str, language: str) -> LanguageProvider | None:
+        probe = SourceFile(
+            rel_path=path,
+            abs_path=Path(path),
+            language=language,
+            content="",
+            content_hash="",
+            size_bytes=0,
+        )
+        return self.provider_for_source(probe)
+
+    @classmethod
+    def supported_languages(cls) -> list[dict]:
+        return [dict(item) for item in SUPPORTED_LANGUAGES]
 
     def diagnostics(self) -> dict:
         """Return per-provider status for doctor reports."""
@@ -65,14 +107,19 @@ class LanguageProviderRegistry:
     def parse_and_extract(self, source: SourceFile) -> tuple:
         provider = self.provider_for_source(source)
         if provider is None:
-            from codegraphkb.core.parsers.base import ExtractResult
-            return ExtractResult(symbols=[], edges=[]), ProviderChoice(
+            has_code_fallback = source.language in CODE_FALLBACK_LANGUAGES
+            extract = file_summary_fallback(source) if has_code_fallback else _empty_extract()
+            return extract, ProviderChoice(
                 provider_id="none",
-                parser_backend="none",
-                parser_version="1",
+                parser_backend="fallback" if extract.symbols else "none",
+                parser_version=str(FALLBACK_PARSER_VERSION) if extract.symbols else "1",
                 preferred_backend=self.parser_backend.value,
                 fallback_used=True,
-                warning=f"No provider for language `{source.language}`.",
+                warning=(
+                    f"No provider for language `{source.language}`; added file_summary fallback."
+                    if has_code_fallback
+                    else f"No provider for language `{source.language}`."
+                ),
             )
         syntax = provider.parse_syntax(source)
         extraction = provider.extract_symbols(source, syntax)
@@ -86,6 +133,11 @@ class LanguageProviderRegistry:
                 # AUTO preferred tree-sitter; fell back to regex.
                 fallback_used = True
                 warning = "tree-sitter unavailable; used regex fallback"
+        if not extraction.symbols and source.language in CODE_FALLBACK_LANGUAGES:
+            fallback = file_summary_fallback(source)
+            extraction.symbols.extend(fallback.symbols)
+            fallback_used = True
+            warning = "no symbols extracted; added file_summary fallback"
         return extraction, ProviderChoice(
             provider_id=provider.id,
             parser_backend=actual_backend,
@@ -99,7 +151,7 @@ class LanguageProviderRegistry:
 def _expected_parser_backend(provider_id: str, backend: ParserBackend) -> str:
     if provider_id == "python":
         return "ast"
-    if provider_id == "java":
+    if provider_id in {"java", "go", "csharp", "rust", "kotlin"}:
         return "regex"
     if backend == ParserBackend.REGEX:
         return "regex"
@@ -113,3 +165,9 @@ def _semantic_backend_id(provider_id: str) -> str:
         "typescript": "typescript-compiler-api",
         "python": "pyright/basedpyright",
     }.get(provider_id, "")
+
+
+def _empty_extract():
+    from codegraphkb.core.parsers.base import ExtractResult
+
+    return ExtractResult(symbols=[], edges=[])

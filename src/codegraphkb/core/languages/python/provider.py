@@ -10,10 +10,14 @@ from codegraphkb.core.scanner import SourceFile
 
 class PythonLanguageProvider:
     id = "python"
+    language_id = "python"
     extensions = (".py", ".pyi")
 
     def detect(self, file_path: str) -> bool:
         return file_path.endswith(self.extensions)
+
+    def can_parse(self, path: str) -> bool:
+        return self.detect(path)
 
     def parse_syntax(self, source_file: SourceFile) -> SyntaxParseResult:
         return SyntaxParseResult(

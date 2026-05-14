@@ -2,6 +2,12 @@
 
 > A context compiler for Claude, Cursor, Codex, and other coding agents.
 
+## What is CodeGraphKB?
+
+CodeGraphKB is a graph-powered context compiler for AI coding agents. It indexes
+a repo into files, symbols, calls, routes, tests, and config signals, then
+produces compact context packs for questions and edit tasks.
+
 Convert a codebase into a graph-powered knowledge base, then serve **only the smallest useful context** to your LLM — or compile a complete edit-context pack (files to edit, files to read, related tests, validation commands, risks) before an agent starts editing.
 
 Instead of pasting whole repos into Claude / Cursor / GPT, CodeGraphKB:
@@ -18,9 +24,10 @@ The engine ships as a **library**, a **CLI**, an **MCP server**, and an optional
 ## Quick start
 
 ```bash
-pip install -e .             # MVP needs no infra (SQLite-only)
-codegraph index .            # one-time scan; re-runs are incremental
+python -m pip install -e ".[all,dev]"
+codegraph index . --embed    # one-time scan; re-runs are incremental
 codegraph ask "How does the upload flow work?"
+codegraph prepare-edit "Add a new endpoint for project upload" --json
 codegraph impact src/payments/stripe.ts
 codegraph doctor             # diagnose parser/schema/embeddings state
 codegraph stats
@@ -201,6 +208,38 @@ Endpoints: `GET /health`, `GET /stats`, `POST /index`, `POST /ask`, `GET /impact
   "pinned_files": [], "context_only": false }
 ```
 
+## Product API (multi-project preview)
+
+```bash
+python -m codegraphkb.server.run_product_api
+curl http://localhost:8765/health
+```
+
+The product API stores app metadata in `.codegraphkb_app/app.sqlite`, imports
+projects into `.codegraphkb_app/workspaces`, and exposes project-scoped
+endpoints such as:
+
+```text
+POST /projects/github
+POST /projects/upload
+GET  /projects
+GET  /projects/{project_id}/jobs/latest
+POST /projects/{project_id}/ask
+POST /projects/{project_id}/prepare-edit
+GET  /projects/{project_id}/impact
+GET  /projects/{project_id}/stats
+```
+
+Docker quickstart:
+
+```bash
+docker compose up --build
+curl http://localhost:8765/health
+```
+
+See [docs/PRODUCT_QUICKSTART.md](docs/PRODUCT_QUICKSTART.md) for curl examples,
+security guardrails, and current limitations.
+
 ---
 
 ## Languages
@@ -219,7 +258,8 @@ To keep `pip install`-able with zero required infra:
 
 - Neo4j / Postgres / Redis / Qdrant — replaced by SQLite + an in-process BM25 inverted index, plus a SQLite-backed embeddings table with brute-force cosine search. The schema is isomorphic to the production design, so swapping later is mechanical.
 - LSP / CodeQL — Tree-sitter is supported via `[parser]` extra (gracefully falls back to `ast`+regex when not installed).
-- Web UI — designed in `codegraphkb_architecture.md`, not built yet.
+- Hosted/SaaS product UI. The local graph UI exists, and the multi-project
+  product API is available as a local-first preview.
 
 ## Phase 3 edit-context modules
 

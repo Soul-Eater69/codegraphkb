@@ -34,9 +34,10 @@ from codegraphkb.core.parsers.base import (
     ParsedEdge,
     ParsedSymbol,
 )
+from codegraphkb.core.parsers.regex_utils import first_string_literal, normalize_route_path
 from codegraphkb.core.scanner import SourceFile
 
-JAVA_PARSER_VERSION = 1
+JAVA_PARSER_VERSION = 2
 
 _PACKAGE_RE = re.compile(r"(?m)^\s*package\s+([\w.]+)\s*;")
 _IMPORT_RE = re.compile(
@@ -84,7 +85,16 @@ _FIELD_RE = re.compile(
     \s* = .*? ;
     """
 )
-_CALL_RE = re.compile(r"(?<![\w$.])([A-Za-z_$][\w$]*)\s*\(")
+_CALL_RE = re.compile(r"(?<![\w$])([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?)\s*\(")
+_ANNOT_CALL_RE = re.compile(r"@(?P<name>\w[\w.]*)(?:\((?P<args>[^)]*)\))?")
+_SPRING_MAPPING_METHODS = {
+    "GetMapping": "GET",
+    "PostMapping": "POST",
+    "PutMapping": "PUT",
+    "PatchMapping": "PATCH",
+    "DeleteMapping": "DELETE",
+}
+_TEST_ANNOTATIONS = {"Test", "ParameterizedTest"}
 
 # Reserved words / control flow that masquerade as calls in regex output.
 _JAVA_KEYWORDS = frozenset({
@@ -153,7 +163,11 @@ def parse_java(source: SourceFile) -> ExtractResult:
             end_line=span["end_line"],
             signature=_signature_for_type(text, span),
             parent_qualified_name=package or None,
-            extras={"java_kind": kind, "annotations": span["annotations"]},
+            extras={
+                "language": "java",
+                "java_kind": kind,
+                "annotations": span["annotations"],
+            },
         ))
         for ext in span["extends"]:
             edges.append(ParsedEdge(
@@ -175,7 +189,14 @@ def parse_java(source: SourceFile) -> ExtractResult:
         type_qname = f"{package}.{span['name']}" if package else span["name"]
         body = text[span["body_start"]: span["body_end"]]
         body_line_offset = text[: span["body_start"]].count("\n")
+        class_route_prefix = _class_route_prefix(span["annotation_calls"])
+        class_is_controller = any(
+            ann in {"RestController", "Controller"} for ann in span["annotations"]
+        )
+        method_qnames_by_name: dict[str, str] = {}
         for m in _METHOD_RE.finditer(body):
+            annotations = _annotation_calls_before(body, m.start()) + _annotation_calls_in(m.group(0))
+            annotation_names = [_short_annotation_name(a["name"]) for a in annotations]
             # The regex has two alternatives: with return type (groups
             # ``return``/``name``) or constructor form (``ctor_name`` only).
             ctor_name = m.group("ctor_name")
@@ -198,8 +219,11 @@ def parse_java(source: SourceFile) -> ExtractResult:
                 is_constructor = (return_type == span["name"])
             params = m.group("params").strip()
             line = body_line_offset + body.count("\n", 0, m.start()) + 1
-            kind = "constructor" if is_constructor else "method"
+            kind = "constructor" if is_constructor else (
+                "test_block" if any(a in _TEST_ANNOTATIONS for a in annotation_names) else "method"
+            )
             sym_qname = f"{type_qname}.{method_name}" if not is_constructor else f"{type_qname}.<init>"
+            method_qnames_by_name[method_name] = sym_qname
             symbols.append(ParsedSymbol(
                 kind=kind,
                 name=method_name,
@@ -209,8 +233,13 @@ def parse_java(source: SourceFile) -> ExtractResult:
                 signature=f"{return_type} {method_name}({params})",
                 return_type="" if is_constructor else return_type,
                 parent_qualified_name=type_qname,
-                extras={},
+                visibility=_visibility_from_signature(m.group(0)),
+                extras={"language": "java", "annotations": annotation_names},
             ))
+            route = _method_route(annotations, class_route_prefix)
+            if route and (class_is_controller or class_route_prefix):
+                method, path = route
+                _add_route_symbol(symbols, edges, method, path, sym_qname, line)
             # Calls inside the method body (only if we have a body block).
             if m.group("body") == "{":
                 body_start = m.end()
@@ -235,6 +264,8 @@ def parse_java(source: SourceFile) -> ExtractResult:
                             edge_type="CALLS",
                             confidence=0.55,
                             extraction_source="regex",
+                            line=line,
+                            reason="java.call",
                         ))
         for m in _FIELD_RE.finditer(body):
             name = m.group("name")
@@ -248,7 +279,9 @@ def parse_java(source: SourceFile) -> ExtractResult:
                 end_line=line,
                 signature=f"{m.group('type').strip()} {name}",
                 parent_qualified_name=type_qname,
+                extras={"language": "java"},
             ))
+        _append_java_test_edges(symbols, edges, method_qnames_by_name)
 
     return ExtractResult(symbols=symbols, edges=edges, imports=imports)
 
@@ -304,8 +337,9 @@ def _collect_type_spans(text: str):
         implements = _split_type_list(m.group("implements"))
         # Annotations may be on lines preceding the decl OR matched as part
         # of the type-regex prefix; collect both.
-        annotations = _annotations_before(text, m.start())
-        annotations += _annotations_in(text[m.start(): m.end()])
+        annotation_calls = _annotation_calls_before(text, m.start())
+        annotation_calls += _annotation_calls_in(text[m.start(): m.end()])
+        annotations = [_short_annotation_name(a["name"]) for a in annotation_calls]
         yield {
             "name": m.group("name"),
             "kind": m.group("kind"),
@@ -317,6 +351,7 @@ def _collect_type_spans(text: str):
             "extends": extends,
             "implements": implements,
             "annotations": annotations,
+            "annotation_calls": annotation_calls,
         }
 
 
@@ -341,6 +376,10 @@ def _annotations_in(span: str) -> list[str]:
     return _ANNOT_RE.findall(span)
 
 
+def _annotation_calls_in(span: str) -> list[dict[str, str]]:
+    return [{"name": m.group("name"), "args": m.group("args") or ""} for m in _ANNOT_CALL_RE.finditer(span)]
+
+
 def _annotations_before(text: str, decl_start: int) -> list[str]:
     """Pull the annotation names from the lines just above a declaration."""
     out: list[str] = []
@@ -358,6 +397,123 @@ def _annotations_before(text: str, decl_start: int) -> list[str]:
             out.append(m.group(1))
     out.reverse()
     return out
+
+
+def _annotation_calls_before(text: str, decl_start: int) -> list[dict[str, str]]:
+    """Pull annotation calls from the contiguous lines above a declaration."""
+    out: list[dict[str, str]] = []
+    head = text[:decl_start]
+    lines = head.splitlines()
+    for line in reversed(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if not stripped.startswith("@"):
+            break
+        out[0:0] = _annotation_calls_in(stripped)
+    return out
+
+
+def _short_annotation_name(name: str) -> str:
+    return name.rsplit(".", 1)[-1]
+
+
+def _class_route_prefix(annotation_calls: list[dict[str, str]]) -> str:
+    for ann in annotation_calls:
+        if _short_annotation_name(ann["name"]) == "RequestMapping":
+            return first_string_literal(ann["args"])
+    return ""
+
+
+def _method_route(
+    annotation_calls: list[dict[str, str]],
+    class_route_prefix: str,
+) -> tuple[str, str] | None:
+    for ann in annotation_calls:
+        short = _short_annotation_name(ann["name"])
+        if short in _SPRING_MAPPING_METHODS:
+            return (
+                _SPRING_MAPPING_METHODS[short],
+                normalize_route_path(class_route_prefix, first_string_literal(ann["args"])),
+            )
+        if short == "RequestMapping":
+            method = _request_mapping_method(ann["args"])
+            return method, normalize_route_path(class_route_prefix, first_string_literal(ann["args"]))
+    return None
+
+
+def _request_mapping_method(args: str) -> str:
+    match = re.search(r"RequestMethod\.(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)", args or "")
+    return match.group(1) if match else "ANY"
+
+
+def _add_route_symbol(
+    symbols: list[ParsedSymbol],
+    edges: list[ParsedEdge],
+    method: str,
+    path: str,
+    handler_qname: str,
+    line: int,
+) -> None:
+    route_qname = f"route::{method} {path}"
+    if not any(s.qualified_name == route_qname for s in symbols):
+        symbols.append(ParsedSymbol(
+            kind="route",
+            name=f"{method} {path}",
+            qualified_name=route_qname,
+            start_line=line,
+            end_line=line,
+            signature=f"{method} {path}",
+            parent_qualified_name=handler_qname,
+            extras={
+                "language": "java",
+                "http_method": method,
+                "path": path,
+                "handler": handler_qname,
+            },
+        ))
+    edges.append(ParsedEdge(
+        src_qualified_name=route_qname,
+        dst_name=handler_qname,
+        dst_qname=handler_qname,
+        edge_type="ROUTES_TO",
+        confidence=0.9,
+        extraction_source="regex",
+        line=line,
+        reason="java.spring_route",
+    ))
+
+
+def _visibility_from_signature(signature: str) -> str:
+    for visibility in ("public", "private", "protected"):
+        if re.search(rf"\b{visibility}\b", signature):
+            return visibility
+    return ""
+
+
+def _append_java_test_edges(
+    symbols: list[ParsedSymbol],
+    edges: list[ParsedEdge],
+    method_qnames_by_name: dict[str, str],
+) -> None:
+    for sym in symbols:
+        if sym.kind != "test_block":
+            continue
+        for edge in [e for e in edges if e.src_qualified_name == sym.qualified_name and e.edge_type == "CALLS"]:
+            target_name = edge.dst_name.rsplit(".", 1)[-1]
+            target_qname = method_qnames_by_name.get(target_name)
+            if not target_qname:
+                continue
+            edges.append(ParsedEdge(
+                src_qualified_name=sym.qualified_name,
+                dst_name=target_qname,
+                dst_qname=target_qname,
+                edge_type="TESTS",
+                confidence=0.75,
+                extraction_source="regex",
+                line=edge.line,
+                reason="java.test_calls_symbol",
+            ))
 
 
 def _find_matching_brace(text: str, open_pos: int) -> int:

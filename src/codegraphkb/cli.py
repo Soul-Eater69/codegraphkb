@@ -267,6 +267,21 @@ def stats_cmd(repo: str, as_json: bool, object_types: bool) -> None:
                 click.echo(f"  {role:<24} {n}")
 
 
+@cli.command("languages", help="List supported source languages.")
+@click.option("--json", "as_json", is_flag=True)
+def languages_cmd(as_json: bool) -> None:
+    from codegraphkb.core.languages.registry import LanguageProviderRegistry
+
+    payload = {"supported": LanguageProviderRegistry.supported_languages()}
+    if as_json:
+        click.echo(json.dumps(payload, indent=2))
+        return
+    click.echo(click.style("Supported languages", bold=True))
+    for item in payload["supported"]:
+        extensions = ", ".join(item["extensions"])
+        click.echo(f"- {item['id']}: {extensions}")
+
+
 # ---------- query ----------
 @cli.command("ask", help="Ask a question about the codebase.")
 @click.argument("question")

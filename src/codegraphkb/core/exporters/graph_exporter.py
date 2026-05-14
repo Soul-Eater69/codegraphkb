@@ -64,9 +64,14 @@ _CALL_NODE_KINDS = (
     "constructor",
     "class",
     "interface",
+    "struct",
+    "record",
+    "enum",
+    "trait",
     "type_alias",
     "component",
     "module",
+    "test_block",
 )
 
 
@@ -573,6 +578,9 @@ def _qname_to_node_id(qname: str) -> str:
         return "symbol:?"
     if qname.startswith(("file:", "symbol:", "folder:", "process:")):
         return qname
-    if qname.endswith((".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")) and "/" in qname:
+    if qname.endswith((
+        ".py", ".pyi", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+        ".java", ".go", ".cs", ".rs", ".kt", ".kts",
+    )) and "/" in qname:
         return _file_id(qname)
     return _symbol_id(qname)

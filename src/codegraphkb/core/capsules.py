@@ -14,6 +14,11 @@ def build_symbol_capsule(symbol: ParsedSymbol, file_path: str,
         f"### {symbol.kind.title()}: {symbol.qualified_name}",
         f"- File: `{file_path}:{symbol.start_line}-{symbol.end_line}`",
     ]
+    language = (symbol.extras or {}).get("language")
+    if language:
+        lines.append(f"- Language: {language}")
+    if symbol.kind == "file_summary":
+        lines.append("- Summary: file-level fallback; no finer symbols were detected.")
     if symbol.signature:
         lines.append(f"- Signature: `{symbol.signature}`")
     if symbol.docstring:
