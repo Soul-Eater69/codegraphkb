@@ -92,6 +92,38 @@ def test_export_impact_graph_contains_target(tmp_path: Path) -> None:
     assert any(n.get("metadata", {}).get("is_target") for n in payload["nodes"])
 
 
+def test_export_graph_respects_max_nodes_and_edges(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _build_python_repo(repo)
+    kb = CodeGraphKB(repo)
+    kb.index(force=True)
+
+    payload = kb.export_graph(view="full", max_nodes=3, max_edges=1)
+
+    assert payload["metadata"]["node_count"] == len(payload["nodes"])
+    assert payload["metadata"]["edge_count"] == len(payload["edges"])
+    assert len(payload["nodes"]) <= 3
+    assert len(payload["edges"]) <= 1
+    node_ids = {node["id"] for node in payload["nodes"]}
+    assert all(edge["source"] in node_ids and edge["target"] in node_ids for edge in payload["edges"])
+
+
+def test_export_impact_graph_missing_target_returns_clean_payload(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _build_python_repo(repo)
+    kb = CodeGraphKB(repo)
+    kb.index(force=True)
+
+    payload = kb.export_impact_graph("missing_symbol")
+
+    assert payload["metadata"]["view"] == "impact"
+    assert payload["metadata"]["target"] == "missing_symbol"
+    assert payload["metadata"]["resolved_targets"] == ["missing_symbol"]
+    assert payload["nodes"]
+    assert payload["edges"] == []
+    assert any(node["id"] == "symbol:missing_symbol" for node in payload["nodes"])
+
+
 def test_export_processes_contains_steps(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     _build_python_repo(repo)
