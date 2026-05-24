@@ -938,6 +938,129 @@ def export_neo4j_cmd(repo: str, view: str, uri: str, user: str, password: str,
     click.echo("  Login:         neo4j / codegraphkb")
 
 
+# ---------- one-command UX ----------
+@cli.command("start", help="Index the repo and start the local Product API + UI on one command.")
+@click.argument("repo", type=click.Path(file_okay=False, exists=True), default=".")
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", type=int, default=8765, show_default=True)
+@click.option("--no-browser", "no_browser", is_flag=True, help="Do not auto-open the browser.")
+@click.option("--no-index", "no_index", is_flag=True,
+              help="Skip indexing — useful if the repo is already indexed.")
+@click.option("--force", is_flag=True, help="Re-index every file, ignoring content hashes.")
+@click.option("--embed", is_flag=True, help="Embed symbol capsules.")
+@click.option("--parser", "parser_choice", type=click.Choice(["auto", "tree-sitter", "regex"]),
+              default="auto", show_default=True)
+@click.option("--semantic", "semantic_choice",
+              type=click.Choice(["none", "auto", "typescript"]),
+              default="auto", show_default=True)
+@click.option("--no-serve", "no_serve", is_flag=True,
+              help="Run indexing + artifact generation but do not start the server.")
+def start_cmd(repo: str, host: str, port: int, no_browser: bool, no_index: bool,
+              force: bool, embed: bool, parser_choice: str, semantic_choice: str,
+              no_serve: bool) -> None:
+    from codegraphkb.ux.start import start_local_experience
+
+    def say(msg: str) -> None:
+        click.echo(msg)
+
+    result = start_local_experience(
+        repo,
+        host=host,
+        port=port,
+        open_browser=not no_browser,
+        no_index=no_index,
+        force=force,
+        embed=embed,
+        parser=parser_choice,
+        semantic=semantic_choice,
+        start_server=not no_serve,
+        on_message=say,
+    )
+    if no_serve:
+        for line in result.lines:
+            click.echo(line)
+
+
+@cli.command("export-artifacts",
+             help="Generate .codegraphkb/ artifacts (graph.json, graph.html, report, mcp.json).")
+@click.argument("repo", type=click.Path(file_okay=False, exists=True), default=".")
+@click.option("--out", "out_dir", type=click.Path(file_okay=False),
+              default=None,
+              help="Output directory. Defaults to <repo>/.codegraphkb/.")
+@click.option("--no-report", is_flag=True)
+@click.option("--no-graph-json", "no_graph_json", is_flag=True)
+@click.option("--no-graph-html", "no_graph_html", is_flag=True)
+@click.option("--no-mcp", is_flag=True)
+@click.option("--no-edit-plan", "no_edit_plan", is_flag=True,
+              help="Skip generating the prepare-edit example (the slowest artifact).")
+@click.option("--view", type=click.Choice(
+    ["full", "repo", "symbols", "calls", "processes", "framework"]),
+    default="full", show_default=True)
+def export_artifacts_cmd(repo: str, out_dir: str | None, no_report: bool,
+                         no_graph_json: bool, no_graph_html: bool, no_mcp: bool,
+                         no_edit_plan: bool, view: str) -> None:
+    from codegraphkb.ux.artifacts import generate_artifacts
+
+    kb = CodeGraphKB(repo)
+    result = generate_artifacts(
+        kb,
+        out_dir=Path(out_dir) if out_dir else None,
+        include_report=not no_report,
+        include_graph_json=not no_graph_json,
+        include_graph_html=not no_graph_html,
+        include_mcp=not no_mcp,
+        include_edit_plan_example=not no_edit_plan,
+        view=view,
+    )
+    click.echo(click.style("Artifacts generated", bold=True, fg="green"))
+    for p in result.written:
+        click.echo(f"  · {p}")
+    if result.skipped:
+        click.echo()
+        click.echo(click.style("Skipped", fg="yellow"))
+        for key, reason in result.skipped.items():
+            click.echo(f"  · {key}: {reason}")
+
+
+# ---------- assistant install ----------
+@cli.command("install", help="Print or write MCP config for Claude/Cursor/Codex.")
+@click.argument("assistant", type=click.Choice(["claude", "cursor", "codex"]))
+@click.option("--repo", "repo", type=click.Path(file_okay=False, exists=True), default=".")
+@click.option("--print", "print_only", is_flag=True, help="Print the config to stdout (default).")
+@click.option("--yes", "write", is_flag=True, help="Write to the assistant's config file.")
+@click.option("--config", "config_path", type=click.Path(dir_okay=False), default=None,
+              help="Override the destination config path.")
+def install_cmd(assistant: str, repo: str, print_only: bool, write: bool,
+                config_path: str | None) -> None:
+    from codegraphkb.ux.installers import install_assistant
+
+    result = install_assistant(
+        assistant,
+        Path(repo),
+        write=write,
+        config_path=Path(config_path) if config_path else None,
+        print_only=print_only,
+    )
+    for note in result.notes:
+        click.echo(note, err=True)
+
+
+@cli.command("uninstall", help="Remove the codegraphkb MCP entry from an assistant config.")
+@click.argument("assistant", type=click.Choice(["claude", "cursor", "codex"]))
+@click.option("--repo", "repo", type=click.Path(file_okay=False, exists=True), default=".")
+@click.option("--config", "config_path", type=click.Path(dir_okay=False), default=None)
+def uninstall_cmd(assistant: str, repo: str, config_path: str | None) -> None:
+    from codegraphkb.ux.installers import uninstall_assistant
+
+    result = uninstall_assistant(
+        assistant,
+        config_path=Path(config_path) if config_path else None,
+        repo=Path(repo),
+    )
+    for note in result.notes:
+        click.echo(note)
+
+
 # ---------- servers ----------
 @cli.command("serve", help="Run the MCP or HTTP server.")
 @click.argument("kind", type=click.Choice(["mcp", "api", "ui"]))
